@@ -275,12 +275,13 @@ class SelectionWidget(QWidget):
             widget.style().polish(widget); widget.style().unpolish(widget)
 
 class AnnotationDialog(QDialog):
-    def __init__(self, annotation=None, parent=None):
+    def __init__(self, annotation=None, parent=None, is_editing=True):
         super().__init__(parent)
         self.setWindowTitle("Category Choices")
         self.setModal(True)
         self.setMinimumWidth(1200); self.setMinimumHeight(800)
         
+        self.is_editing = is_editing
         self.settings = QSettings(ORGANIZATION_NAME, APP_NAME)
         self.mappings = {}; self.full_categories = {}
 
@@ -356,13 +357,17 @@ class AnnotationDialog(QDialog):
 
         button_container = QWidget()
         button_layout = QHBoxLayout(button_container); button_layout.setSpacing(10)
-        button_box = QDialogButtonBox()
-        ok_button = QPushButton("Save"); cancel_button = QPushButton("Cancel")
-        button_box.addButton(ok_button, QDialogButtonBox.ButtonRole.AcceptRole)
-        button_box.addButton(cancel_button, QDialogButtonBox.ButtonRole.RejectRole)
-        button_box.accepted.connect(self.accept); button_box.rejected.connect(self.reject)
-        button_layout.addStretch(); button_layout.addWidget(button_box)
+        self.button_box = QDialogButtonBox()
+        self.ok_button = QPushButton("SAVE CHANGES" if self.is_editing else "Save")
+        self.cancel_button = QPushButton("Cancel")
+        self.button_box.addButton(self.ok_button, QDialogButtonBox.ButtonRole.AcceptRole)
+        self.button_box.addButton(self.cancel_button, QDialogButtonBox.ButtonRole.RejectRole)
+        self.button_box.accepted.connect(self.accept); self.button_box.rejected.connect(self.reject)
+        button_layout.addStretch(); button_layout.addWidget(self.button_box)
         main_layout.addWidget(button_container)
+        
+        if not self.is_editing:
+            button_container.hide()
         
         main_scroll.setWidget(main_widget)
         dialog_layout = QVBoxLayout(self); dialog_layout.setContentsMargins(0, 0, 0, 0); dialog_layout.addWidget(main_scroll)
@@ -401,6 +406,10 @@ class AnnotationDialog(QDialog):
     def accept(self):
         errors = self._get_validation_errors()
         if not errors:
+            super().accept()
+            return
+        
+        if self.disable_alerts_checkbox.isChecked():
             super().accept()
             return
         
@@ -493,6 +502,11 @@ class AnnotationDialog(QDialog):
                 widget = item.widget() if item else None
                 if isinstance(widget, TagWidget):
                     widget.set_invalid(False)
+
+    def closeEvent(self, event):
+        if not self.is_editing:
+            self.accept()
+        super().closeEvent(event)
         
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
@@ -555,8 +569,8 @@ class AnnotationDialog(QDialog):
             QWidget[invalid="true"] > QComboBox { border: 1px solid #e53935; }
             QLineEdit { padding: 10px; background-color: #2d2d2d; border: 1px solid #3d3d3d; border-radius: 4px; }
             QPushButton { padding: 10px 24px; border-radius: 4px; font-weight: bold; border: none; }
-            QPushButton[text="Save"] { background-color: #2b79ff; color: white; }
-            QPushButton[text="Save"]:hover { background-color: #3d8aff; }
+            QPushButton[text="Save"], QPushButton[text="SAVE CHANGES"] { background-color: #2b79ff; color: white; }
+            QPushButton[text="Save"]:hover, QPushButton[text="SAVE CHANGES"]:hover { background-color: #3d8aff; }
             QPushButton[text="Cancel"] { background-color: #666666; color: white; }
             QPushButton[text="Cancel"]:hover { background-color: #777777; }
             QLabel { padding: 8px 12px; }

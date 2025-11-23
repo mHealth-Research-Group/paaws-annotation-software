@@ -137,12 +137,16 @@ class AnnotationManager:
         current_idx = self.get_current_annotation_index(sorted_annotations)
 
         target_annotation = None
+        is_editing = False
+        
         if current_idx != -1:
             target_annotation = sorted_annotations[current_idx]
+            is_editing = True
         elif self.app.current_annotation:
             target_annotation = self.app.current_annotation
+            is_editing = False
 
-        dialog = AnnotationDialog(target_annotation, self.app)
+        dialog = AnnotationDialog(target_annotation, self.app, is_editing=is_editing)
 
         if dialog.exec():
             selections = dialog.get_all_selections()
@@ -155,13 +159,16 @@ class AnnotationManager:
                 "special_notes": selections["Special Notes"]
             }
 
-            if target_annotation:
+            if is_editing and target_annotation:
                 target_annotation.update_comment_body(**label_data)
                 self.last_used_labels = label_data.copy()
                 self.last_used_labels["special_notes"] = ""
                 print(f"Updated labels for annotation: {target_annotation.start_time:.3f}s")
                 self.app.updateAnnotationTimeline()
             else:
+                if target_annotation:
+                    target_annotation.update_comment_body(**label_data)
+                    self.app.updateAnnotationTimeline()
                 self.last_used_labels = label_data.copy()
                 self.last_used_labels["special_notes"] = ""
                 print("Updated default labels for next annotation.")
