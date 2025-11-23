@@ -4,11 +4,12 @@ import csv
 from collections import defaultdict
 
 from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                           QPushButton, QWidget, QDialogButtonBox, QComboBox,
-                           QGridLayout, QFrame, QScrollArea, QLayout, QMessageBox, QCheckBox, QCompleter)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect, QPoint, QTimer, QSettings, QSortFilterProxyModel, QStringListModel
+                           QPushButton, QWidget, QDialogButtonBox,
+                           QGridLayout, QFrame, QScrollArea, QLayout, QMessageBox, QCheckBox)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect, QPoint, QTimer, QSettings
 from PyQt6.QtGui import QKeyEvent
 from src.utils import resource_path
+from src.custom_combo import SearchableComboBox, MultiSelectComboBox
 
 # Constants
 APP_NAME = "PAAWS-Annotation-Software"
@@ -21,26 +22,6 @@ CAT_PA = "PA TYPE"
 CAT_BP = "Behavioral Parameters"
 CAT_ES = "Experimental situation"
 CAT_NOTES = "Special Notes"
-
-class SubstringFilterProxyModel(QSortFilterProxyModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-    
-    def filterAcceptsRow(self, source_row, source_parent):
-        if not self.filterRegularExpression().pattern():
-            return True
-        
-        source_model = self.sourceModel()
-        index = source_model.index(source_row, 0, source_parent)
-        data = source_model.data(index)
-        
-        if data is None:
-            return False
-        
-        filter_text = self.filterRegularExpression().pattern().lower()
-        item_text = str(data).lower()
-        return filter_text in item_text
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, spacing=-1):
@@ -187,7 +168,6 @@ class SelectionWidget(QWidget):
             layout.addWidget(scroll)
         
         layout.addWidget(combo)
-        self.combo.activated.connect(self._handle_combo_activated)
 
     def set_unlabeled_text(self, text):
         self.unlabeled_text = text
@@ -209,6 +189,12 @@ class SelectionWidget(QWidget):
 
         if not self.selected_values:
             self._add_value(self.unlabeled_text)
+ 
+        if hasattr(self.combo, 'set_selected'):
+            if self.multi_select:
+                self.combo.set_selected(self.selected_values)
+            else:
+                self.combo.set_selected(self.selected_values[0] if self.selected_values else self.unlabeled_text)
         
         self._update_ui()
         self.selectionChanged.emit()
@@ -264,16 +250,6 @@ class SelectionWidget(QWidget):
 
     def _update_ui(self):
         self.update_active_label()
-        if not self.multi_select and self.selected_values:
-            current_selection = self.selected_values[0]
-            if self.combo.currentText() != current_selection:
-                self.combo.blockSignals(True)
-                self.combo.setCurrentText(current_selection)
-                self.combo.blockSignals(False)
-        elif self.multi_select and self.combo.currentIndex() != 0:
-             self.combo.blockSignals(True)
-             self.combo.setCurrentIndex(0)
-             self.combo.blockSignals(False)
 
     def update_active_label(self):
         if not self.selected_values:
@@ -345,7 +321,13 @@ class AnnotationDialog(QDialog):
         for i, header in enumerate(headers):
             label = QLabel(header); label.setObjectName("headerLabel"); grid.addWidget(label, 0, i)
         
-        self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo = (QComboBox() for _ in range(5))
+        # Create custom combo boxes
+        self.posture_combo = SearchableComboBox()
+        self.hlb_combo = MultiSelectComboBox()
+        self.pa_combo = SearchableComboBox()
+        self.bp_combo = MultiSelectComboBox()
+        self.es_combo = SearchableComboBox()
+        
         self.posture_active, self.hlb_active, self.pa_active, self.bp_active, self.es_active = (QLabel() for _ in range(5))
         
         self.posture_selection = SelectionWidget(self.posture_combo, self.posture_active, multi_select=False)
@@ -536,8 +518,14 @@ class AnnotationDialog(QDialog):
         if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
         super().keyPressEvent(event)
     def selectCategoryByIndex(self, index):
-        category_combos = [ self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo ]
-        if 0 <= index < len(category_combos): category_combos[index].showPopup()
+        category_combos = [self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo]
+        if 0 <= index < len(category_combos):
+            combo = category_combos[index]
+            combo.focus_search()
+            # For multi-select combos, also show dropdown
+            if isinstance(combo, MultiSelectComboBox):
+                combo.search_box.clear()
+                combo.show_dropdown()
     def load_mappings(self):
         try:
             path = resource_path('data/mapping/mapping.json')
@@ -555,52 +543,61 @@ class AnnotationDialog(QDialog):
             return True
         except Exception as e: QMessageBox.critical(self, "Config Error", f"Could not load categories.csv:\n{e}"); return False
     def _populate_combos(self):
-        combos_and_categories = [
-            (self.posture_combo, self.full_categories[CAT_POSTURE]),
-            (self.hlb_combo, self.full_categories[CAT_HLB]),
-            (self.pa_combo, self.full_categories[CAT_PA]),
-            (self.bp_combo, self.full_categories[CAT_BP]),
-            (self.es_combo, self.full_categories[CAT_ES])
-        ]
+        # Set items for all combos
+        self.posture_combo.set_items(self.full_categories[CAT_POSTURE])
+        self.hlb_combo.set_items(self.full_categories[CAT_HLB])
+        self.pa_combo.set_items(self.full_categories[CAT_PA])
+        self.bp_combo.set_items(self.full_categories[CAT_BP])
+        self.es_combo.set_items(self.full_categories[CAT_ES])
         
-        for combo, items in combos_and_categories:
-            combo.addItems(items)
-            self._setup_searchable_combo(combo, items)
-        
+        # Set unlabeled text on SelectionWidget instances
         self.posture_selection.set_unlabeled_text(self.full_categories[CAT_POSTURE][0])
         self.hlb_selection.set_unlabeled_text(self.full_categories[CAT_HLB][0])
         self.pa_selection.set_unlabeled_text(self.full_categories[CAT_PA][0])
         self.bp_selection.set_unlabeled_text(self.full_categories[CAT_BP][0])
         self.es_selection.set_unlabeled_text(self.full_categories[CAT_ES][0])
+        
+        # Also set unlabeled text on the MultiSelectComboBox instances
+        self.hlb_combo.set_unlabeled_text(self.full_categories[CAT_HLB][0])
+        self.bp_combo.set_unlabeled_text(self.full_categories[CAT_BP][0])
+        
+        # Connect signals for single-select combos
+        self.posture_combo.itemSelected.connect(lambda text: self._on_combo_selection(self.posture_selection, text))
+        self.pa_combo.itemSelected.connect(lambda text: self._on_combo_selection(self.pa_selection, text))
+        self.es_combo.itemSelected.connect(lambda text: self._on_combo_selection(self.es_selection, text))
+        
+        # Connect signals for multi-select combos
+        self.hlb_combo.selectionChanged.connect(lambda items: self._on_multi_selection(self.hlb_selection, items))
+        self.bp_combo.selectionChanged.connect(lambda items: self._on_multi_selection(self.bp_selection, items))
     
-    def _setup_searchable_combo(self, combo, items):
-        combo.setEditable(True)
-        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        
-        source_model = QStringListModel(items)
-        filter_model = SubstringFilterProxyModel()
-        filter_model.setSourceModel(source_model)
-        
-        completer = QCompleter()
-        completer.setModel(filter_model)
-        completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        
-        combo.setCompleter(completer)
-        
-        line_edit = combo.lineEdit()
-        line_edit.textEdited.connect(lambda text: self._on_combo_text_edited(combo, filter_model, text))
-        
-        completer.activated.connect(lambda text: self._on_completer_activated(combo, text))
+    def _on_combo_selection(self, selection_widget, text):
+        """Handle single selection from custom combo"""
+        if text and text != selection_widget.unlabeled_text:
+            selection_widget.selected_values = [text]
+            selection_widget._update_ui()
+            selection_widget.selectionChanged.emit()
+            selection_widget.userMadeSelection.emit()
     
-    def _on_combo_text_edited(self, combo, filter_model, text):
-        filter_model.setFilterRegularExpression(text)
-        combo.completer().complete()
-    
-    def _on_completer_activated(self, combo, text):
-        index = combo.findText(text, Qt.MatchFlag.MatchExactly)
-        if index >= 0:
-            combo.setCurrentIndex(index)
+    def _on_multi_selection(self, selection_widget, items):
+        if items and len(items) > 1 and selection_widget.unlabeled_text in items:
+            items = [i for i in items if i != selection_widget.unlabeled_text]
+
+        selection_widget.selected_values = items if items else [selection_widget.unlabeled_text]
+        if selection_widget.multi_select:
+            while selection_widget.tag_layout.count() > 0:
+                item = selection_widget.tag_layout.takeAt(0)
+                if item and item.widget():
+                    item.widget().deleteLater()
+            for value in selection_widget.selected_values:
+                if value != selection_widget.unlabeled_text:
+                    tag = TagWidget(value)
+                    tag.removed.connect(selection_widget.remove_tag)
+                    selection_widget.tag_layout.addWidget(tag)
+
+        selection_widget.update_active_label()
+        
+        selection_widget.selectionChanged.emit()
+        selection_widget.userMadeSelection.emit()
     def _get_stylesheet(self):
         return """
             QWidget { 
