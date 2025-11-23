@@ -5,8 +5,8 @@ from collections import defaultdict
 
 from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                            QPushButton, QWidget, QDialogButtonBox, QComboBox,
-                           QGridLayout, QFrame, QScrollArea, QLayout, QMessageBox, QCheckBox)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect, QPoint, QTimer, QSettings
+                           QGridLayout, QFrame, QScrollArea, QLayout, QMessageBox, QCheckBox, QCompleter)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect, QPoint, QTimer, QSettings, QSortFilterProxyModel, QStringListModel
 from PyQt6.QtGui import QKeyEvent
 from src.utils import resource_path
 
@@ -21,6 +21,26 @@ CAT_PA = "PA TYPE"
 CAT_BP = "Behavioral Parameters"
 CAT_ES = "Experimental situation"
 CAT_NOTES = "Special Notes"
+
+class SubstringFilterProxyModel(QSortFilterProxyModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    
+    def filterAcceptsRow(self, source_row, source_parent):
+        if not self.filterRegularExpression().pattern():
+            return True
+        
+        source_model = self.sourceModel()
+        index = source_model.index(source_row, 0, source_parent)
+        data = source_model.data(index)
+        
+        if data is None:
+            return False
+        
+        filter_text = self.filterRegularExpression().pattern().lower()
+        item_text = str(data).lower()
+        return filter_text in item_text
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, spacing=-1):
@@ -148,24 +168,26 @@ class SelectionWidget(QWidget):
         self.selected_values = []
         self.multi_select = multi_select
         self.unlabeled_text = ""
+        self._is_typing = False
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         
         if multi_select:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+            scroll.setMinimumHeight(80)
+            scroll.setMaximumHeight(120)
             self.tag_container = QWidget()
-            self.tag_layout = FlowLayout(self.tag_container)
+            self.tag_layout = FlowLayout(self.tag_container, margin=4, spacing=6)
             self.tag_container.setLayout(self.tag_layout)
             scroll.setWidget(self.tag_container)
-            scroll.setMinimumHeight(120); scroll.setMaximumHeight(180)
             layout.addWidget(scroll)
         
         layout.addWidget(combo)
-        self.combo.currentTextChanged.connect(self._handle_combo_change)
+        self.combo.activated.connect(self._handle_combo_activated)
 
     def set_unlabeled_text(self, text):
         self.unlabeled_text = text
@@ -191,15 +213,17 @@ class SelectionWidget(QWidget):
         self._update_ui()
         self.selectionChanged.emit()
 
-    def _handle_combo_change(self, text):
-        if not text: return
+    def _handle_combo_activated(self, index):
+        text = self.combo.itemText(index)
+        if not text:
+            return
 
         changed = False
         if not self.multi_select:
             if not self.selected_values or text != self.selected_values[0]:
                 self.selected_values = [text]
                 changed = True
-        else: # Multi-select logic
+        else:
             if text != self.unlabeled_text and text not in self.selected_values:
                 if self.unlabeled_text in self.selected_values:
                     self._remove_value(self.unlabeled_text)
@@ -531,15 +555,91 @@ class AnnotationDialog(QDialog):
             return True
         except Exception as e: QMessageBox.critical(self, "Config Error", f"Could not load categories.csv:\n{e}"); return False
     def _populate_combos(self):
-        self.posture_combo.addItems(self.full_categories[CAT_POSTURE]); self.hlb_combo.addItems(self.full_categories[CAT_HLB]); self.pa_combo.addItems(self.full_categories[CAT_PA]); self.bp_combo.addItems(self.full_categories[CAT_BP]); self.es_combo.addItems(self.full_categories[CAT_ES])
-        self.posture_selection.set_unlabeled_text(self.full_categories[CAT_POSTURE][0]); self.hlb_selection.set_unlabeled_text(self.full_categories[CAT_HLB][0]); self.pa_selection.set_unlabeled_text(self.full_categories[CAT_PA][0]); self.bp_selection.set_unlabeled_text(self.full_categories[CAT_BP][0]); self.es_selection.set_unlabeled_text(self.full_categories[CAT_ES][0])
+        combos_and_categories = [
+            (self.posture_combo, self.full_categories[CAT_POSTURE]),
+            (self.hlb_combo, self.full_categories[CAT_HLB]),
+            (self.pa_combo, self.full_categories[CAT_PA]),
+            (self.bp_combo, self.full_categories[CAT_BP]),
+            (self.es_combo, self.full_categories[CAT_ES])
+        ]
+        
+        for combo, items in combos_and_categories:
+            combo.addItems(items)
+            self._setup_searchable_combo(combo, items)
+        
+        self.posture_selection.set_unlabeled_text(self.full_categories[CAT_POSTURE][0])
+        self.hlb_selection.set_unlabeled_text(self.full_categories[CAT_HLB][0])
+        self.pa_selection.set_unlabeled_text(self.full_categories[CAT_PA][0])
+        self.bp_selection.set_unlabeled_text(self.full_categories[CAT_BP][0])
+        self.es_selection.set_unlabeled_text(self.full_categories[CAT_ES][0])
+    
+    def _setup_searchable_combo(self, combo, items):
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        
+        source_model = QStringListModel(items)
+        filter_model = SubstringFilterProxyModel()
+        filter_model.setSourceModel(source_model)
+        
+        completer = QCompleter()
+        completer.setModel(filter_model)
+        completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        
+        combo.setCompleter(completer)
+        
+        line_edit = combo.lineEdit()
+        line_edit.textEdited.connect(lambda text: self._on_combo_text_edited(combo, filter_model, text))
+        
+        completer.activated.connect(lambda text: self._on_completer_activated(combo, text))
+    
+    def _on_combo_text_edited(self, combo, filter_model, text):
+        filter_model.setFilterRegularExpression(text)
+        combo.completer().complete()
+    
+    def _on_completer_activated(self, combo, text):
+        index = combo.findText(text, Qt.MatchFlag.MatchExactly)
+        if index >= 0:
+            combo.setCurrentIndex(index)
     def _get_stylesheet(self):
         return """
-            QWidget { background-color: #1e1e1e; color: #ffffff; font-size: 13px; }
-            QLabel#headerLabel { font-weight: bold; color: #ffffff; font-size: 14px; padding-bottom: 8px; }
-            QLabel[category="true"] { padding: 8px 12px; background-color: #3d3d3d; border-radius: 4px; font-weight: bold; }
-            QWidget#notesContainer { background-color: #2a2a2a; border-radius: 4px; padding: 12px; }
-            QLabel#notesSublabel { color: #888888; font-size: 12px; padding: 4px 0; }
+            QWidget { 
+                background-color: #1e1e1e; 
+                color: #ffffff; 
+                font-size: 13px; 
+            }
+            
+            QLabel#headerLabel { 
+                font-weight: bold; 
+                color: #ffffff; 
+                font-size: 14px; 
+                padding: 8px 12px; 
+                background-color: #2a2a2a;
+                border-radius: 4px;
+            }
+            
+            QLabel[category="true"] { 
+                padding: 10px 14px; 
+                background-color: #2a2a2a; 
+                border-radius: 6px; 
+                font-weight: bold;
+                font-size: 13px;
+                border: 1px solid #3d3d3d;
+            }
+            
+            QWidget#notesContainer { 
+                background-color: #252525; 
+                border-radius: 6px; 
+                padding: 16px; 
+                border: 1px solid #3d3d3d;
+            }
+            
+            QLabel#notesSublabel { 
+                color: #999999; 
+                font-size: 11px; 
+                padding: 2px 0; 
+            }
+            
             QCheckBox { 
                 spacing: 8px; 
                 color: #ffffff;
@@ -565,13 +665,109 @@ class AnnotationDialog(QDialog):
                 background-color: #3d8aff;
                 border-color: #3d8aff;
             }
-            QComboBox { background-color: #2d2d2d; border: 1px solid #3d3d3d; border-radius: 4px; padding: 8px 12px; min-width: 400px; }
-            QWidget[invalid="true"] > QComboBox { border: 1px solid #e53935; }
-            QLineEdit { padding: 10px; background-color: #2d2d2d; border: 1px solid #3d3d3d; border-radius: 4px; }
-            QPushButton { padding: 10px 24px; border-radius: 4px; font-weight: bold; border: none; }
-            QPushButton[text="Save"], QPushButton[text="SAVE CHANGES"] { background-color: #2b79ff; color: white; }
-            QPushButton[text="Save"]:hover, QPushButton[text="SAVE CHANGES"]:hover { background-color: #3d8aff; }
-            QPushButton[text="Cancel"] { background-color: #666666; color: white; }
-            QPushButton[text="Cancel"]:hover { background-color: #777777; }
-            QLabel { padding: 8px 12px; }
+            
+            QComboBox { 
+                background-color: #252525; 
+                border: 2px solid #3d3d3d; 
+                border-radius: 6px; 
+                padding: 10px 14px;
+                min-height: 20px;
+                font-size: 13px;
+            }
+            QComboBox:hover {
+                border-color: #4a4a4a;
+                background-color: #2a2a2a;
+            }
+            QComboBox:focus {
+                border-color: #2b79ff;
+                background-color: #2a2a2a;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 30px;
+                border-left: 1px solid #3d3d3d;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border: none;
+                width: 0;
+                height: 0;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #888888;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #252525;
+                border: 2px solid #3d3d3d;
+                border-radius: 4px;
+                selection-background-color: #2b79ff;
+                color: #ffffff;
+                padding: 4px;
+            }
+            
+            QWidget[invalid="true"] > QComboBox { 
+                border: 2px solid #e53935; 
+            }
+            
+            QLineEdit { 
+                padding: 10px 14px; 
+                background-color: #252525; 
+                border: 2px solid #3d3d3d; 
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            QLineEdit:hover {
+                border-color: #4a4a4a;
+                background-color: #2a2a2a;
+            }
+            QLineEdit:focus {
+                border-color: #2b79ff;
+                background-color: #2a2a2a;
+            }
+            
+            QPushButton { 
+                padding: 12px 28px; 
+                border-radius: 6px; 
+                font-weight: bold; 
+                border: none;
+                font-size: 13px;
+            }
+            QPushButton[text="Save"], QPushButton[text="SAVE CHANGES"] { 
+                background-color: #2b79ff; 
+                color: white; 
+            }
+            QPushButton[text="Save"]:hover, QPushButton[text="SAVE CHANGES"]:hover { 
+                background-color: #3d8aff; 
+            }
+            QPushButton[text="Save"]:pressed, QPushButton[text="SAVE CHANGES"]:pressed { 
+                background-color: #1a5cbd; 
+            }
+            QPushButton[text="Cancel"] { 
+                background-color: #3d3d3d; 
+                color: white; 
+            }
+            QPushButton[text="Cancel"]:hover { 
+                background-color: #4a4a4a; 
+            }
+            QPushButton[text="Cancel"]:pressed { 
+                background-color: #2d2d2d; 
+            }
+            
+            QLabel { 
+                padding: 8px 12px;
+                background-color: #252525;
+                border-radius: 6px;
+                border: 1px solid #3d3d3d;
+            }
+            
+            QScrollArea {
+                border: 2px solid #3d3d3d;
+                border-radius: 6px;
+                background-color: #252525;
+                padding: 4px;
+            }
         """
