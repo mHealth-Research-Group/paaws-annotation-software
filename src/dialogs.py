@@ -109,9 +109,8 @@ class TagWidget(QFrame):
                 border-radius: 4px; 
                 padding: 2px; 
                 margin: 2px;
-                border: 1px solid transparent; /* Add transparent border for smooth transitions */
+                border: 1px solid transparent;
             }
-            /* Style for invalid tags */
             TagWidget[invalid="true"] {
                 border: 1px solid #e53935;
                 background-color: #5f2a2a;
@@ -222,9 +221,16 @@ class SelectionWidget(QWidget):
             self.userMadeSelection.emit()
 
     def remove_tag(self, text):
+        """Remove a tag and update selection"""
         self._remove_value(text)
+        
+        # If nothing left, add unlabeled
         if not self.selected_values:
             self._add_value(self.unlabeled_text)
+        
+        # Update the combo box to reflect changes
+        if hasattr(self.combo, 'set_selected'):
+            self.combo.set_selected(self.selected_values)
         
         self._update_ui()
         self.selectionChanged.emit()
@@ -316,10 +322,22 @@ class AnnotationDialog(QDialog):
         options_layout.addStretch(); options_layout.addWidget(self.disable_alerts_checkbox)
         main_layout.addLayout(options_layout)
         
-        grid = QGridLayout(); grid.setSpacing(16); grid.setColumnMinimumWidth(0, 220); grid.setColumnStretch(1, 2)
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        # Fixed column widths to prevent resizing
+        grid.setColumnMinimumWidth(0, 220)  # Category column
+        grid.setColumnMinimumWidth(1, 350)  # Choices column
+        grid.setColumnMinimumWidth(2, 300)  # Active labels column
+        # Set stretch factors - only category column should not stretch
+        grid.setColumnStretch(0, 0)  # Category - fixed width
+        grid.setColumnStretch(1, 2)  # Choices - can stretch
+        grid.setColumnStretch(2, 1)  # Active labels - can stretch less
+        
         headers = ["Category", "Choice(s)", "Active labels"]
         for i, header in enumerate(headers):
-            label = QLabel(header); label.setObjectName("headerLabel"); grid.addWidget(label, 0, i)
+            label = QLabel(header)
+            label.setObjectName("headerLabel")
+            grid.addWidget(label, 0, i)
         
         # Create custom combo boxes
         self.posture_combo = SearchableComboBox()
@@ -329,6 +347,11 @@ class AnnotationDialog(QDialog):
         self.es_combo = SearchableComboBox()
         
         self.posture_active, self.hlb_active, self.pa_active, self.bp_active, self.es_active = (QLabel() for _ in range(5))
+        
+        # Set size policies for active labels to prevent excessive expansion
+        for label in [self.posture_active, self.hlb_active, self.pa_active, self.bp_active, self.es_active]:
+            label.setWordWrap(True)
+            label.setMinimumWidth(250)
         
         self.posture_selection = SelectionWidget(self.posture_combo, self.posture_active, multi_select=False)
         self.hlb_selection = SelectionWidget(self.hlb_combo, self.hlb_active, multi_select=True)
@@ -515,17 +538,16 @@ class AnnotationDialog(QDialog):
         super().closeEvent(event)
         
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
+        if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: 
+            self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
         super().keyPressEvent(event)
+    
     def selectCategoryByIndex(self, index):
         category_combos = [self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo]
         if 0 <= index < len(category_combos):
             combo = category_combos[index]
             combo.focus_search()
-            # For multi-select combos, also show dropdown
-            if isinstance(combo, MultiSelectComboBox):
-                combo.search_box.clear()
-                combo.show_dropdown()
+    
     def load_mappings(self):
         try:
             path = resource_path('data/mapping/mapping.json')
@@ -534,6 +556,7 @@ class AnnotationDialog(QDialog):
             self.mappings['POS_to_PA'] = defaultdict(list); [[self.mappings['POS_to_PA'][pos].append(pa) for pos in postures] for pa, postures in self.mappings.get('PA_to_POS', {}).items()]
             return True
         except Exception as e: QMessageBox.critical(self, "Config Error", f"Could not load mapping.json:\n{e}"); return False
+    
     def load_categories(self):
         try:
             path = resource_path('data/categories/categories.csv')
@@ -542,6 +565,7 @@ class AnnotationDialog(QDialog):
                 self.full_categories = { CAT_POSTURE: ["Posture_Unlabeled"] + categories[CAT_POSTURE], CAT_HLB: ["HLB_Unlabeled"] + categories[CAT_HLB], CAT_PA: ["PA_Type_Unlabeled"] + categories[CAT_PA], CAT_BP: ["CP_Unlabeled"] + categories[CAT_BP], CAT_ES: ["ES_Unlabeled"] + categories[CAT_ES] }
             return True
         except Exception as e: QMessageBox.critical(self, "Config Error", f"Could not load categories.csv:\n{e}"); return False
+    
     def _populate_combos(self):
         # Set items for all combos
         self.posture_combo.set_items(self.full_categories[CAT_POSTURE])
@@ -579,25 +603,51 @@ class AnnotationDialog(QDialog):
             selection_widget.userMadeSelection.emit()
     
     def _on_multi_selection(self, selection_widget, items):
+        """Handle multi-selection changes from combo box"""
+        # Remove unlabeled if other items are present
         if items and len(items) > 1 and selection_widget.unlabeled_text in items:
             items = [i for i in items if i != selection_widget.unlabeled_text]
-
-        selection_widget.selected_values = items if items else [selection_widget.unlabeled_text]
+        
+        # If nothing selected, use unlabeled
+        if not items:
+            items = [selection_widget.unlabeled_text]
+        
+        # Update the selection widget's selected values
+        selection_widget.selected_values = items
+        
+        # Rebuild tags
         if selection_widget.multi_select:
+            # Clear existing tags
             while selection_widget.tag_layout.count() > 0:
                 item = selection_widget.tag_layout.takeAt(0)
                 if item and item.widget():
                     item.widget().deleteLater()
-            for value in selection_widget.selected_values:
+            
+            # Add tags for non-unlabeled items
+            for value in items:
                 if value != selection_widget.unlabeled_text:
                     tag = TagWidget(value)
-                    tag.removed.connect(selection_widget.remove_tag)
+                    tag.removed.connect(lambda text, sw=selection_widget: self._on_tag_removed(sw, text))
                     selection_widget.tag_layout.addWidget(tag)
-
+        
+        # Update the active label
         selection_widget.update_active_label()
         
+        # Emit signals
         selection_widget.selectionChanged.emit()
         selection_widget.userMadeSelection.emit()
+
+    def _on_tag_removed(self, selection_widget, text):
+        """Handle tag removal - update combo box"""
+        selection_widget.remove_tag(text)
+        
+        # Update the combo box to reflect the removal
+        if hasattr(selection_widget.combo, 'set_selected'):
+            remaining = [v for v in selection_widget.selected_values if v != text]
+            if not remaining:
+                remaining = [selection_widget.unlabeled_text]
+            selection_widget.combo.set_selected(remaining)
+    
     def _get_stylesheet(self):
         return """
             QWidget { 

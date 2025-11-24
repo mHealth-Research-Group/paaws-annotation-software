@@ -1,40 +1,40 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
                                      QListWidget, QListWidgetItem, QCheckBox, QLabel,
-                                     QPushButton, QFrame, QComboBox, QCompleter)
+                                     QPushButton, QFrame, QComboBox, QCompleter, QAbstractItemView, QListView)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QSortFilterProxyModel
 from PyQt6.QtGui import QFontMetrics, QStandardItemModel, QStandardItem
-
+from PyQt6.QtWidgets import QComboBox, QAbstractItemView, QStyledItemDelegate
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QPainter
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect
 
 class SearchableComboBox(QComboBox):
-    """Searchable combo box with QCompleter for single selection"""
     
     itemSelected = pyqtSignal(str) 
     
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # Configure combo box
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         
-        # Create filter model
+        from PyQt6.QtWidgets import QAbstractItemView
+        self.view().setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.view().setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        
         self.pFilterModel = QSortFilterProxyModel(self)
         self.pFilterModel.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.pFilterModel.setSourceModel(self.model())
         
-        # Create completer
         self.completer = QCompleter(self.pFilterModel, self)
         self.completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
         self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.setCompleter(self.completer)
         
-        # Connect signals
         self.lineEdit().textEdited.connect(self.pFilterModel.setFilterFixedString)
         self.completer.activated.connect(self.on_completer_activated)
         
     def on_completer_activated(self, text):
-        """Handle completer activation"""
         if text:
             index = self.findText(text)
             if index >= 0:
@@ -42,331 +42,329 @@ class SearchableComboBox(QComboBox):
                 self.itemSelected.emit(text)
     
     def setModel(self, model):
-        """Override setModel to update filter model"""
         super().setModel(model)
         self.pFilterModel.setSourceModel(model)
         self.completer.setModel(self.pFilterModel)
     
     def setModelColumn(self, column):
-        """Override setModelColumn"""
         self.completer.setCompletionColumn(column)
         self.pFilterModel.setFilterKeyColumn(column)
         super().setModelColumn(column)
     
     def set_items(self, items):
-        """Set items in the combo box"""
         self.clear()
         if items:
             self.addItems(items)
     
     def get_selected(self):
-        """Get currently selected item"""
         return self.currentText()
     
     def set_selected(self, item):
-        """Set selected item"""
         if isinstance(item, str):
             index = self.findText(item)
             if index >= 0:
                 self.setCurrentIndex(index)
     
     def focus_search(self):
-        """Focus and select all text in line edit"""
         self.setFocus()
         self.lineEdit().selectAll()
-
-
-class MultiSelectComboBox(QWidget):
-    """Multi-select combo box with checkboxes"""
     
-    selectionChanged = pyqtSignal(list)  # Emitted when selection changes
+    def showPopup(self):
+        super().showPopup()
+        current_index = self.view().currentIndex()
+        if current_index.isValid():
+            self.view().setCurrentIndex(current_index)
+    
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.clearFocus()
+            event.accept()
+            return
+        elif event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            if not self.view().isVisible():
+                self.showPopup()
+            super().keyPressEvent(event)
+            return
+        super().keyPressEvent(event)
+
+
+class TickMarkDelegate(QStyledItemDelegate):
+    
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        
+        model = index.model()
+        
+        if isinstance(model, QSortFilterProxyModel):
+            source_index = model.mapToSource(index)
+            source_model = model.sourceModel()
+            item = source_model.itemFromIndex(source_index)
+        else:
+            item = model.itemFromIndex(index) if hasattr(model, 'itemFromIndex') else None
+        
+        if item and item.data(Qt.ItemDataRole.UserRole) == "selected":
+            painter.save()
+            painter.setPen(Qt.GlobalColor.white)
+            
+            rect = option.rect
+            tick_rect = QRect(rect.right() - 25, rect.top(), 20, rect.height())
+            painter.drawText(tick_rect, Qt.AlignmentFlag.AlignCenter, "✓")
+            
+            painter.restore()
+
+
+class MultiSelectComboBox(SearchableComboBox):
+    
+    selectionChanged = pyqtSignal(list)
     
     def __init__(self, items=None, parent=None):
         super().__init__(parent)
-        self.all_items = items or []
-        self.selected_items = []
-        self.dropdown_visible = False
+        
         self.unlabeled_text = ""
-        self._programmatic_close = False
+        self._selected_items = set()
+        self._is_popup_open = False
         
-        self.setStyleSheet(self._get_stylesheet())
-        self._init_ui()
+        self.view().setItemDelegate(TickMarkDelegate(self))
         
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        self.completer.activated.disconnect(self.on_completer_activated)
+        self.completer.activated.connect(self._on_item_activated)
         
-        # Search box
-        self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Type to search...")
-        self.search_box.textChanged.connect(self._filter_items)
-        self.search_box.installEventFilter(self)
-        layout.addWidget(self.search_box)
-        
-        # Dropdown container
-        self.dropdown = QFrame()
-        self.dropdown.setFrameShape(QFrame.Shape.StyledPanel)
-        self.dropdown.setObjectName("dropdown")
-        self.dropdown.hide()
-        self.dropdown.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.dropdown.installEventFilter(self)
-        
-        dropdown_layout = QVBoxLayout(self.dropdown)
-        dropdown_layout.setContentsMargins(0, 0, 0, 0)
-        dropdown_layout.setSpacing(0)
-        
-        # List widget
-        self.list_widget = QListWidget()
-        self.list_widget.setObjectName("listWidget")
-        self.list_widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.list_widget.installEventFilter(self)
-        dropdown_layout.addWidget(self.list_widget)
-        
-        layout.addWidget(self.dropdown)
-        
-        self._populate_list()
-        
-        self.installEventFilter(self)
-        
-    def _populate_list(self, filter_text=""):
-        """Populate list with items, optionally filtered"""
-        self.list_widget.clear()
-        
-        for item_text in self.all_items:
-            if filter_text and filter_text.lower() not in item_text.lower():
-                continue
-                
-            item = QListWidgetItem()
-            self.list_widget.addItem(item)
-            
-            # Multi-select: use checkbox
-            checkbox = QCheckBox(item_text)
-            checkbox.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            checkbox.setChecked(item_text in self.selected_items)
-            from functools import partial
-            checkbox.stateChanged.connect(partial(self._on_checkbox_changed, item_text))
-            self.list_widget.setItemWidget(item, checkbox)
-            item.setSizeHint(checkbox.sizeHint())
-        
-        if self.dropdown_visible:
-            self._update_dropdown_size()
-    
-    def _filter_items(self, text):
-        """Filter items based on search text"""
-        self._populate_list(text)
-        if not self.dropdown_visible:
-            self.show_dropdown()
-    
-    def _on_checkbox_changed(self, text, state):
-        """Handle checkbox state change"""
-        is_checked = (state == Qt.CheckState.Checked.value)
-        
-        if is_checked:
-            if text not in self.selected_items:
-                self.selected_items.append(text)
-                
-                if self.unlabeled_text and text != self.unlabeled_text:
-                    if self.unlabeled_text in self.selected_items:
-                        self.selected_items.remove(self.unlabeled_text)
-                        self._update_checkbox_states()
-        else:
-            if text in self.selected_items:
-                self.selected_items.remove(text)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
 
-        # self._update_search_box_display()
+        self.view().installEventFilter(self)
         
-        self.selectionChanged.emit(self.selected_items.copy())
+        self.view().viewport().installEventFilter(self)
+        
+        self.lineEdit().setPlaceholderText("Type to search or click to select...")
+        
+        if items:
+            self.set_items(items)
+        
+        self.view().setStyleSheet("""
+            QListView {
+                background-color: #252525;
+                border: 2px solid #3d3d3d;
+                border-radius: 4px;
+                selection-background-color: #2b79ff;
+                color: #ffffff;
+                padding: 4px;
+                outline: none;
+            }
+            QListView::item {
+                padding: 6px;
+                padding-right: 30px;
+                border: none;
+            }
+            QListView::item:hover {
+                background-color: #3d3d3d;
+            }
+            QListView::item:selected {
+                background-color: #2b79ff;
+                color: #ffffff;
+            }
+        """)
     
-    def _update_dropdown_size(self):
-        """Update dropdown size based on current item count"""
-        item_count = min(self.list_widget.count(), 10)
-        if item_count > 0:
-            item_height = 35
-            self.list_widget.setMinimumHeight(item_height * item_count)
-            self.list_widget.setMaximumHeight(item_height * 10)
-        else:
-            self.list_widget.setMinimumHeight(30)
-            self.list_widget.setMaximumHeight(300)
+    def eventFilter(self, obj, event):
+        if obj == self.view().viewport():
+            if event.type() == QEvent.Type.MouseButtonRelease:
+                index = self.view().indexAt(event.pos())
+                if index.isValid():
+                    self._toggle_item_at_index(index)
+                    return True
+        elif obj == self.view():
+            if event.type() == QEvent.Type.KeyPress:
+                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    index = self.view().currentIndex()
+                    if index.isValid():
+                        self._toggle_item_at_index(index)
+                        return True
+        return False
     
-    def show_dropdown(self):
-        """Show the dropdown list"""
-        self.dropdown.show()
-        self.dropdown_visible = True
-        self._update_dropdown_size()
+    def _on_item_activated(self, text):
+        if text:
+            search_text = self.lineEdit().text()
+            
+            for i in range(self.model().rowCount()):
+                item = self.model().item(i)
+                if item and item.text() == text:
+                    index = self.model().index(i, 0)
+                    self._toggle_item_at_index(index)
+                    break
+            
+            self.lineEdit().blockSignals(True)
+            self.lineEdit().setText(search_text)
+            self.lineEdit().blockSignals(False)
+            
+            if not self.view().isVisible():
+                self.showPopup()
+            self.lineEdit().setFocus()
     
-    def hide_dropdown(self):
-        """Hide the dropdown list"""
-        if not self.dropdown_visible:
+    def _toggle_item_at_index(self, index):
+        if not index.isValid():
             return
-        self._programmatic_close = True
-        self.dropdown.hide()
-        self.dropdown_visible = False
-        self._update_search_box_display()
-        self._programmatic_close = False
+        
+        item = self.model().itemFromIndex(index)
+        if not item:
+            return
+        
+        item_text = item.text()
+        
+        if item_text in self._selected_items:
+            self._selected_items.discard(item_text)
+            item.setData(None, Qt.ItemDataRole.UserRole)
+        else:
+            if item_text != self.unlabeled_text:
+                self._selected_items.discard(self.unlabeled_text)
+                for i in range(self.model().rowCount()):
+                    unlabeled_item = self.model().item(i)
+                    if unlabeled_item and unlabeled_item.text() == self.unlabeled_text:
+                        unlabeled_item.setData(None, Qt.ItemDataRole.UserRole)
+                        break
+            
+            self._selected_items.add(item_text)
+            item.setData("selected", Qt.ItemDataRole.UserRole)
+        
+        if not self._selected_items:
+            self._selected_items.add(self.unlabeled_text)
+            for i in range(self.model().rowCount()):
+                unlabeled_item = self.model().item(i)
+                if unlabeled_item and unlabeled_item.text() == self.unlabeled_text:
+                    unlabeled_item.setData("selected", Qt.ItemDataRole.UserRole)
+                    break
+        
+        self.view().viewport().update()
+        
+        self.selectionChanged.emit(list(self._selected_items))
     
-    def mousePressEvent(self, event):
-        """Handle mouse press events"""
-        if self.dropdown_visible:
-            if self.dropdown.geometry().contains(event.pos()):
+    def _update_display_text(self):
+        pass
+    
+    def _get_display_text(self):
+        return ""
+    
+    def showPopup(self):
+        self._is_popup_open = True
+        
+        current_text = self.lineEdit().text()
+        if not current_text.strip():
+            self.lineEdit().blockSignals(True)
+            self.lineEdit().clear()
+            self.lineEdit().blockSignals(False)
+            
+            self.pFilterModel.setFilterFixedString("")
+        
+        super().showPopup()
+        
+        self.lineEdit().setFocus()
+    
+    def hidePopup(self):
+        self._is_popup_open = False
+        super().hidePopup()
+        self._update_display_text()
+    
+    def keyPressEvent(self, event):
+        print("Key Pressed in MultiSelectComboBox:", event.key(), "Popup Open:", self._is_popup_open)
+        if event.key() == Qt.Key.Key_Escape:
+            self.hidePopup()
+            self.clearFocus()
+            event.accept()
+            return
+        elif event.key() == Qt.Key.Key_Down:
+            if not self.view().isVisible():
+                self.showPopup()
                 event.accept()
                 return
-        super().mousePressEvent(event)
+        elif event.key() == Qt.Key.Key_Up:
+            if not self.view().isVisible():
+                self.showPopup()
+                event.accept()
+                return
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            print("Enter key pressed in MultiSelectComboBox")
+            if self._is_popup_open:
+                print("Popup is open, toggling item")
+            elif self.view().isVisible():
+                search_text = self.lineEdit().text()
+                
+                current_index = self.view().currentIndex()
+                if current_index.isValid():
+                    source_index = self.pFilterModel.mapToSource(current_index)
+                    self._toggle_item_at_index(source_index)
+                    
+                    self.lineEdit().blockSignals(True)
+                    self.lineEdit().setText(search_text)
+                    self.lineEdit().blockSignals(False)
+                    
+                    self.lineEdit().setFocus()
+                    
+                    event.accept()
+                    return
+        
+        super().keyPressEvent(event)
     
     def set_items(self, items):
-        """Set the list of items"""
-        self.all_items = items
+        self._all_items = items
+        
+        self.clear()
+        model = QStandardItemModel()
+        
+        for item_text in items:
+            item = QStandardItem()
+            item.setText(item_text)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            
+            if item_text in self._selected_items:
+                item.setData("selected", Qt.ItemDataRole.UserRole)
+            
+            model.appendRow(item)
+        
+        self.setModel(model)
+        self.pFilterModel.setSourceModel(model)
+        self.completer.setModel(self.pFilterModel)
+        
         if items and not self.unlabeled_text:
             self.unlabeled_text = items[0]
-        self._populate_list()
+        
+        self._update_display_text()
     
     def set_unlabeled_text(self, text):
         self.unlabeled_text = text
     
     def get_selected(self):
-        """Get currently selected items"""
-        return self.selected_items.copy()
+        return list(self._selected_items)
     
     def set_selected(self, items):
-        """Set selected items"""
         if isinstance(items, str):
             items = [items]
         
-        self.selected_items = items.copy() if items else []
-        if self.unlabeled_text and len(self.selected_items) > 1:
-            if self.unlabeled_text in self.selected_items:
-                self.selected_items.remove(self.unlabeled_text)
+        if not items:
+            items = []
         
-        self._populate_list(self.search_box.text())
-        self._update_search_box_display()
-    
-    def _update_checkbox_states(self):
-        """Update checkbox states without triggering signals"""
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            checkbox = self.list_widget.itemWidget(item)
-            if isinstance(checkbox, QCheckBox):
-                checkbox.blockSignals(True)
-                checkbox.setChecked(checkbox.text() in self.selected_items)
-                checkbox.blockSignals(False)
-    
-    def _update_search_box_display(self):
-        """Update search box to show selected items summary"""
-        if not self.selected_items or (len(self.selected_items) == 1 and self.selected_items[0] == self.unlabeled_text):
-            self.search_box.setPlaceholderText("Type to search...")
-            if not self.search_box.hasFocus():
-                self.search_box.clear()
-        else:
-            # Show count of selected items
-            valid_items = [item for item in self.selected_items if item != self.unlabeled_text]
-            if valid_items:
-                if len(valid_items) == 1:
-                    display_text = valid_items[0]
+        items_list = list(items)
+        if len(items_list) > 1 and self.unlabeled_text in items_list:
+            items_list.remove(self.unlabeled_text)
+        
+        if not items_list:
+            items_list = [self.unlabeled_text]
+        
+        self._selected_items = set(items_list)
+        
+        for i in range(self.model().rowCount()):
+            item = self.model().item(i)
+            if item:
+                if item.text() in self._selected_items:
+                    item.setData("selected", Qt.ItemDataRole.UserRole)
                 else:
-                    display_text = f"{len(valid_items)} items selected"
-                
-                if not self.search_box.hasFocus():
-                    self.search_box.setText(display_text)
-                    self.search_box.setPlaceholderText(display_text)
-    
-    def clear_selection(self):
-        """Clear all selections"""
-        self.selected_items = []
-        self.search_box.clear()
-        self._populate_list()
+                    item.setData(None, Qt.ItemDataRole.UserRole)
+        
+        if self.view().isVisible():
+            self.view().viewport().update()
+        
+        self._update_display_text()
+        
+        self.selectionChanged.emit(list(self._selected_items))
     
     def focus_search(self):
-        """Focus and select all text in search box"""
-        self.search_box.setFocus()
-        self.search_box.selectAll()
-    
-    def eventFilter(self, obj, event):
-        """Handle events for the widget"""
-        if not hasattr(self, 'search_box') or not hasattr(self, 'dropdown') or not hasattr(self, 'list_widget'):
-            return super().eventFilter(obj, event)
-
-        if obj == self.search_box:
-            if event.type() == QEvent.Type.FocusIn:
-                self.search_box.clear()
-                if not self.dropdown_visible:
-                    self.show_dropdown()
-            elif event.type() == QEvent.Type.KeyPress:
-                if event.key() == Qt.Key.Key_Escape:
-                    self.hide_dropdown()
-                    return True
-                elif event.key() == Qt.Key.Key_Down:
-                    if self.list_widget.count() > 0:
-                        self.list_widget.setCurrentRow(0)
-                    return True
-                elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                    self.hide_dropdown()
-                    return True
-        
-        return super().eventFilter(obj, event)
-    
-    def _get_stylesheet(self):
-        return """
-            QLineEdit {
-                padding: 10px 14px;
-                background-color: #252525;
-                border: 2px solid #3d3d3d;
-                border-radius: 6px;
-                font-size: 13px;
-                color: #ffffff;
-            }
-            QLineEdit:hover {
-                border-color: #4a4a4a;
-                background-color: #2a2a2a;
-            }
-            QLineEdit:focus {
-                border-color: #2b79ff;
-                background-color: #2a2a2a;
-            }
-            
-            QFrame#dropdown {
-                background-color: #252525;
-                border: 2px solid #3d3d3d;
-                border-radius: 4px;
-                margin-top: 4px;
-            }
-            
-            QListWidget#listWidget {
-                background-color: #252525;
-                border: none;
-                outline: none;
-                color: #ffffff;
-            }
-            QListWidget#listWidget::item {
-                background-color: transparent;
-                border: none;
-                padding: 0px;
-            }
-            QListWidget#listWidget::item:hover {
-                background-color: #3d3d3d;
-            }
-            QListWidget#listWidget::item:selected {
-                background-color: #2b79ff;
-            }
-            
-            QCheckBox {
-                spacing: 8px;
-                color: #ffffff;
-                font-size: 13px;
-                padding: 8px 12px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border: 2px solid #3d3d3d;
-                border-radius: 3px;
-                background-color: #2d2d2d;
-            }
-            QCheckBox::indicator:hover {
-                border-color: #2b79ff;
-                background-color: #3d3d3d;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #2b79ff;
-                border-color: #2b79ff;
-            }
-        """
+        self.setFocus()
+        self.lineEdit().clear()
+        self.lineEdit().setFocus()
