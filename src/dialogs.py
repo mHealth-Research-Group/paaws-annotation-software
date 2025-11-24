@@ -603,8 +603,6 @@ class AnnotationDialog(QDialog):
             selection_widget.userMadeSelection.emit()
     
     def _on_multi_selection(self, selection_widget, items):
-        """Handle multi-selection changes from combo box"""
-        # Remove unlabeled if other items are present
         if items and len(items) > 1 and selection_widget.unlabeled_text in items:
             items = [i for i in items if i != selection_widget.unlabeled_text]
         
@@ -638,7 +636,6 @@ class AnnotationDialog(QDialog):
         selection_widget.userMadeSelection.emit()
 
     def _on_tag_removed(self, selection_widget, text):
-        """Handle tag removal - update combo box"""
         selection_widget.remove_tag(text)
         
         # Update the combo box to reflect the removal

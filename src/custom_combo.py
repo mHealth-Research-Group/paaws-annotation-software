@@ -32,7 +32,11 @@ class SearchableComboBox(QComboBox):
         self.setCompleter(self.completer)
         
         self.lineEdit().textEdited.connect(self.pFilterModel.setFilterFixedString)
+
         self.completer.activated.connect(self.on_completer_activated)
+        self.view().installEventFilter(self)
+        self.view().viewport().installEventFilter(self)
+
         
     def on_completer_activated(self, text):
         if text:
@@ -40,6 +44,53 @@ class SearchableComboBox(QComboBox):
             if index >= 0:
                 self.setCurrentIndex(index)
                 self.itemSelected.emit(text)
+
+    def eventFilter(self, obj, event):
+        if obj == self.view().viewport():
+            print("Event in viewport:", event.type())
+            if event.type() == QEvent.Type.MouseButtonPress:
+                if event.button() != Qt.MouseButton.LeftButton:
+                    return False
+                index = self.view().indexAt(event.pos())
+                self._on_item_selected_from_view(index.row())
+                return True
+            elif event.type() == QEvent.Type.KeyPress:
+                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    index = self.view().currentIndex()
+                    self._on_item_selected_from_view(index.row())
+                    return True
+        elif obj == self.view():
+            print("Event in view:", event.type())
+            if event.type() == QEvent.Type.MouseButtonPress:
+                index = self.view().indexAt(event.pos())
+                self._on_completer_popup_clicked(index)
+                return True
+            elif event.type() == QEvent.Type.KeyPress:
+                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    index = self.view().currentIndex()
+                    self._on_completer_popup_clicked(index)
+                    return True
+        return super().eventFilter(obj, event)
+    
+    def _on_completer_popup_clicked(self, index):
+        """Handle clicks on the completer popup"""
+        print("Completer popup clicked!", index)
+        if index.isValid():
+            # Map from filter model to source model
+            source_index = self.pFilterModel.mapToSource(index)
+            text = self.model().data(source_index, Qt.ItemDataRole.DisplayRole)
+            if text:
+                print(f"Clicked on: {text}")
+                self.on_completer_activated(text)
+
+    def _on_item_selected_from_view(self, index):
+        """Handle selection from dropdown view (not completer)"""
+        if index >= 0:
+            text = self.itemText(index)
+            if text:
+                self.itemSelected.emit(text)
+                # set the text in line edit
+                self.lineEdit().setText(text)
     
     def setModel(self, model):
         super().setModel(model)
@@ -178,7 +229,7 @@ class MultiSelectComboBox(SearchableComboBox):
                     if index.isValid():
                         self._toggle_item_at_index(index)
                         return True
-        return False
+        return super().eventFilter(obj, event)
     
     def _on_item_activated(self, text):
         if text:
@@ -194,7 +245,6 @@ class MultiSelectComboBox(SearchableComboBox):
             self.lineEdit().blockSignals(True)
             self.lineEdit().setText(search_text)
             self.lineEdit().blockSignals(False)
-            
             if not self.view().isVisible():
                 self.showPopup()
             self.lineEdit().setFocus()
