@@ -79,7 +79,7 @@ class AnnotationManager:
 
     @autosave
     def toggleAnnotation(self):
-        current_time = self.app.media_player['_position'] / 1000.0
+        current_time = round(self.app.media_player['_position'] / 1000.0)
 
         if self.app.current_annotation is None:
             if self.check_overlap(current_time, current_time):
@@ -137,12 +137,16 @@ class AnnotationManager:
         current_idx = self.get_current_annotation_index(sorted_annotations)
 
         target_annotation = None
+        is_editing = False
+        
         if current_idx != -1:
             target_annotation = sorted_annotations[current_idx]
+            is_editing = True
         elif self.app.current_annotation:
             target_annotation = self.app.current_annotation
+            is_editing = False
 
-        dialog = AnnotationDialog(target_annotation, self.app)
+        dialog = AnnotationDialog(target_annotation, self.app, is_editing=is_editing)
 
         if dialog.exec():
             selections = dialog.get_all_selections()
@@ -155,13 +159,16 @@ class AnnotationManager:
                 "special_notes": selections["Special Notes"]
             }
 
-            if target_annotation:
+            if is_editing and target_annotation:
                 target_annotation.update_comment_body(**label_data)
                 self.last_used_labels = label_data.copy()
                 self.last_used_labels["special_notes"] = ""
                 print(f"Updated labels for annotation: {target_annotation.start_time:.3f}s")
                 self.app.updateAnnotationTimeline()
             else:
+                if target_annotation:
+                    target_annotation.update_comment_body(**label_data)
+                    self.app.updateAnnotationTimeline()
                 self.last_used_labels = label_data.copy()
                 self.last_used_labels["special_notes"] = ""
                 print("Updated default labels for next annotation.")
@@ -255,8 +262,8 @@ class AnnotationManager:
         current_annotation = sorted_annotations[current_idx]
         prev_annotation = sorted_annotations[current_idx - 1]
         gap = current_annotation.start_time - prev_annotation.end_time
-        if abs(gap) > 0.1:
-            QMessageBox.warning(self.app, "Invalid Merge", f"Cannot merge: Annotations are not adjacent (Gap: {gap:.3f}s).")
+        if abs(gap) > 1.0:
+            QMessageBox.warning(self.app, "Invalid Merge", f"Cannot merge: Annotations are not adjacent (Gap: {gap:.1f}s).")
             return
 
         if self._annotations_have_different_labels(prev_annotation, current_annotation):
@@ -302,8 +309,8 @@ class AnnotationManager:
         next_annotation = sorted_annotations[current_idx + 1]
 
         gap = next_annotation.start_time - current_annotation.end_time
-        if abs(gap) > 0.1:
-            QMessageBox.warning(self.app, "Invalid Merge", f"Cannot merge: Annotations are not adjacent (Gap: {gap:.3f}s).")
+        if abs(gap) > 1.0:
+            QMessageBox.warning(self.app, "Invalid Merge", f"Cannot merge: Annotations are not adjacent (Gap: {gap:.1f}s).")
             return
 
         if self._annotations_have_different_labels(current_annotation, next_annotation):
@@ -340,7 +347,7 @@ class AnnotationManager:
 
     @autosave
     def splitCurrentLabel(self):
-        current_time = self.app.media_player['_position'] / 1000.0
+        current_time = round(self.app.media_player['_position'] / 1000.0)
         sorted_annotations = sorted(self.app.annotations, key=lambda x: x.start_time)
         current_idx = self.get_current_annotation_index(sorted_annotations)
 
@@ -349,7 +356,7 @@ class AnnotationManager:
             return
 
         annotation_to_split = sorted_annotations[current_idx]
-        min_duration = 0.1
+        min_duration = 1
         if not (annotation_to_split.start_time < current_time < annotation_to_split.end_time):
              QMessageBox.warning(self.app, "Invalid Split", "Split point must be strictly inside the annotation.")
              return

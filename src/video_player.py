@@ -935,6 +935,7 @@ class VideoPlayerApp(QMainWindow):
         from zipfile import ZipFile
         import csv
         import io
+        from datetime import datetime, timedelta
 
         filename, _ = QFileDialog.getSaveFileName(self, "Export Annotations", "", "ZIP Files (*.zip)")
         if filename:
@@ -942,7 +943,7 @@ class VideoPlayerApp(QMainWindow):
                 with ZipFile(filename, 'w') as zipf:
                     annotations_data = {
                         "annotations": [],
-                        "videohash": self.video_hash
+                        "videoHash": self.video_hash
                     }
                     
                     for annotation in self.annotations:
@@ -958,60 +959,81 @@ class VideoPlayerApp(QMainWindow):
                     
                     zipf.writestr('labels.json', json.dumps(annotations_data, indent=4))
 
+                    if self.current_video_path and os.path.exists(self.current_video_path):
+                        video_timestamp = os.path.getmtime(self.current_video_path)
+                        video_date = datetime.fromtimestamp(video_timestamp)
+                    else:
+                        video_date = datetime.now()
+                    
+                    date_only = video_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
                     headers = {
-                        'posture.csv': [],
-                        'high_level_behavior.csv': [],
-                        'pa_type.csv': [],
-                        'behavioral_parameters.csv': [],
-                        'experimental_situation.csv': []
+                        'POSTURE.csv': [],
+                        'HIGH LEVEL BEHAVIOR.csv': [],
+                        'PA TYPE.csv': [],
+                        'Behavioral Parameters.csv': [],
+                        'Experimental situation.csv': [],
+                        'Special Notes.csv': []
                     }
 
                     for annotation in self.annotations:
                         try:
                             comment_data = json.loads(annotation.comments[0]["body"])
-                            for item in comment_data:
-                                selected_value = item["selectedValue"]
-                                if isinstance(selected_value, list):
-                                    values = selected_value
-                                else:
-                                    values = [selected_value]
+                            start_offset = timedelta(seconds=annotation.start_time)
+                            end_offset = timedelta(seconds=annotation.end_time)
 
-                                for value in values:
-                                    if value:
-                                        if item["category"] == "POSTURE":
-                                            headers['posture.csv'].append([
-                                                annotation.start_time, annotation.end_time,
-                                                value, 'human', 'posture',
-                                                annotation.start_time, annotation.end_time
-                                            ])
-                                        elif item["category"] == "HIGH LEVEL BEHAVIOR":
-                                            headers['high_level_behavior.csv'].append([
-                                                annotation.start_time, annotation.end_time,
-                                                value, 'human', 'hlb',
-                                                annotation.start_time, annotation.end_time
-                                            ])
-                                        elif item["category"] == "PA TYPE":
-                                            headers['pa_type.csv'].append([
-                                                annotation.start_time, annotation.end_time,
-                                                value, 'human', 'pa_type',
-                                                annotation.start_time, annotation.end_time
-                                            ])
-                                        elif item["category"] == "Behavioral Parameters":
-                                            headers['behavioral_parameters.csv'].append([
-                                                annotation.start_time, annotation.end_time,
-                                                value, 'human', 'behavioral_parameters',
-                                                annotation.start_time, annotation.end_time
-                                            ])
-                                        elif item["category"] == "Experimental situation":
-                                            headers['experimental_situation.csv'].append([
-                                                annotation.start_time, annotation.end_time,
-                                                value, 'human', 'experimental_situation',
-                                                annotation.start_time, annotation.end_time
-                                            ])
+                            start_datetime = video_date + start_offset
+                            end_datetime = video_date + end_offset
+                            
+                            video_start_datetime = date_only + start_offset
+                            video_end_datetime = date_only + end_offset
+                            
+                            start_str = start_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                            end_str = end_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                            video_start_str = video_start_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                            video_end_str = video_end_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                           
+                            category_values = {}
+                            for item in comment_data:
+                                category = item["category"]
+                                selected_value = item["selectedValue"]
+                                
+                                if isinstance(selected_value, list):
+                                    values = [v for v in selected_value if v and not v.endswith("_Unlabeled")]
+                                else:
+                                    values = [selected_value] if selected_value and not selected_value.endswith("_Unlabeled") else []
+                                
+                                if values:
+                                    category_values[category] = values
+                            
+                            # Create CSV rows - one row per category
+                            labelset_map = {
+                                "POSTURE": "Posture",
+                                "HIGH LEVEL BEHAVIOR": "High Level Behavior",
+                                "PA TYPE": "PA Type",
+                                "Behavioral Parameters": "Behavioral Parameters",
+                                "Experimental situation": "Experimental Situation",
+                                "Special Notes": "Special Notes"
+                            }
+                            
+                            for category, csv_file in [
+                                ("POSTURE", 'POSTURE.csv'),
+                                ("HIGH LEVEL BEHAVIOR", 'HIGH LEVEL BEHAVIOR.csv'),
+                                ("PA TYPE", 'PA TYPE.csv'),
+                                ("Behavioral Parameters", 'Behavioral Parameters.csv'),
+                                ("Experimental situation", 'Experimental situation.csv'),
+                                ("Special Notes", 'Special Notes.csv')
+                            ]:
+                                if category in category_values and category_values[category]:
+                                    prediction = ", ".join(category_values[category])
+                                    headers[csv_file].append([
+                                        start_str, end_str,
+                                        prediction, 'Expert', labelset_map[category],
+                                        video_start_str, video_end_str
+                                    ])
                         except Exception as e:
                             print(f"Error processing annotation {annotation.id}: {str(e)}")
 
-                    
                     csv_header = ['START_TIME','STOP_TIME','PREDICTION','SOURCE','LABELSET','VIDEO_START_TIME','VIDEO_END_TIME']
                     for filename, data in headers.items():
                         if data:  
@@ -1064,7 +1086,7 @@ class VideoPlayerApp(QMainWindow):
                     data = json.load(f)
        
                 if self.current_video_path:
-                    saved_hash = data.get("videohash", 0)
+                    saved_hash = data.get("videoHash", 0)
                     if saved_hash != self.video_hash:
                         reply = QMessageBox.question(
                             self,
