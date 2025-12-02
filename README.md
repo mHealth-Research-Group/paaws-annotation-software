@@ -123,7 +123,7 @@ Tran, H., Potter, V., Mazzucchelli, U., John, D., Intille, S. (2026). Towards Pr
 We also provide our citation as a bibtex:
 
 ```bibtex
-@InProceedings{10.1007/978-3-032-09117-8_6,
+@InProceedings{tran2026_toward-better-annotations,
 author="Tran, Hoan
 and Potter, Veronika
 and Mazzucchelli, Umberto
