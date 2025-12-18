@@ -540,6 +540,9 @@ class AnnotationDialog(QDialog):
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: 
             self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
+        elif event.key() == Qt.Key.Key_Escape:
+            self.accept()
+            return
         super().keyPressEvent(event)
     
     def selectCategoryByIndex(self, index):
