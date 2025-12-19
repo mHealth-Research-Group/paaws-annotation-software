@@ -599,7 +599,7 @@ class AnnotationDialog(QDialog):
     
     def _on_combo_selection(self, selection_widget, text):
         """Handle single selection from custom combo"""
-        if text and text != selection_widget.unlabeled_text:
+        if text:
             selection_widget.selected_values = [text]
             selection_widget._update_ui()
             selection_widget.selectionChanged.emit()
