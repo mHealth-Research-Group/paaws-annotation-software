@@ -76,12 +76,22 @@ class SearchableComboBox(QComboBox):
         """Handle clicks on the completer popup"""
         print("Completer popup clicked!", index)
         if index.isValid():
-            # Map from filter model to source model
-            source_index = self.pFilterModel.mapToSource(index)
-            text = self.model().data(source_index, Qt.ItemDataRole.DisplayRole)
+            text = index.data(Qt.ItemDataRole.DisplayRole)
+            if not text:
+                try:
+                    if index.model() == self.pFilterModel:
+                        source_index = self.pFilterModel.mapToSource(index)
+                        text = self.model().data(source_index, Qt.ItemDataRole.DisplayRole)
+                except:
+                    pass
+            
             if text:
-                print(f"Clicked on: {text}")
-                self.on_completer_activated(text)
+                print(f"Selected text: {text}")
+                combo_index = self.findText(text, Qt.MatchFlag.MatchFixedString)
+                if combo_index >= 0:
+                    self.setCurrentIndex(combo_index)
+                    self.itemSelected.emit(text)
+                    self.hidePopup()
 
     def _on_item_selected_from_view(self, index):
         """Handle selection from dropdown view (not completer)"""
