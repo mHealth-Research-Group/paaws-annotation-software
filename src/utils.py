@@ -20,10 +20,10 @@ class AutosaveManager:
             file_size = os.path.getsize(file_path)
             size_str = str(file_size)
             video_hash = 0
-            
             for char in size_str:
-                video_hash = ((video_hash << 5) - video_hash + ord(char))
-                video_hash = video_hash & video_hash 
+                video_hash = ((video_hash << 5) - video_hash + ord(char)) & 0xFFFFFFFF  # force 32-bit
+            if video_hash & 0x80000000:
+                video_hash = -((~video_hash & 0xFFFFFFFF) + 1)
             
             return video_hash
         except Exception as e:
@@ -55,7 +55,7 @@ class AutosaveManager:
             
             annotations_data = {
                 "annotations": [],
-                "videohash": video_hash,
+                "videoHash": video_hash,
                 "video_path": video_path
             }
             
@@ -93,7 +93,7 @@ class AutosaveManager:
                 with open(autosave_path, 'r') as f:
                     data = json.load(f)
                 if data.get("video_path") == video_path:
-                    saved_hash = data.get("videohash", 0)
+                    saved_hash = data.get("videoHash", 0)
                     return data, saved_hash == current_hash
             except Exception as e:
                 print(f"Failed to load autosave: {str(e)}")

@@ -49,7 +49,7 @@ def test_save_and_check_annotations(manager, video_file):
     with open(expected_path, 'r') as f:
         saved_data = json.load(f)
         assert saved_data['video_path'] == video_file
-        assert saved_data['videohash'] == video_hash
+        assert saved_data['videoHash'] == video_hash
         assert len(saved_data['annotations']) == 2
         # Check structure of the first saved annotation
         first_saved_ann = saved_data['annotations'][0]
