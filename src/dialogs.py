@@ -4,11 +4,12 @@ import csv
 from collections import defaultdict
 
 from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                           QPushButton, QWidget, QDialogButtonBox, QComboBox,
+                           QPushButton, QWidget, QDialogButtonBox,
                            QGridLayout, QFrame, QScrollArea, QLayout, QMessageBox, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect, QPoint, QTimer, QSettings
 from PyQt6.QtGui import QKeyEvent
 from src.utils import resource_path
+from src.custom_combo import SearchableComboBox, MultiSelectComboBox
 
 # Constants
 APP_NAME = "PAAWS-Annotation-Software"
@@ -108,9 +109,8 @@ class TagWidget(QFrame):
                 border-radius: 4px; 
                 padding: 2px; 
                 margin: 2px;
-                border: 1px solid transparent; /* Add transparent border for smooth transitions */
+                border: 1px solid transparent;
             }
-            /* Style for invalid tags */
             TagWidget[invalid="true"] {
                 border: 1px solid #e53935;
                 background-color: #5f2a2a;
@@ -148,24 +148,25 @@ class SelectionWidget(QWidget):
         self.selected_values = []
         self.multi_select = multi_select
         self.unlabeled_text = ""
+        self._is_typing = False
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         
         if multi_select:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+            scroll.setMinimumHeight(80)
+            scroll.setMaximumHeight(120)
             self.tag_container = QWidget()
-            self.tag_layout = FlowLayout(self.tag_container)
+            self.tag_layout = FlowLayout(self.tag_container, margin=4, spacing=6)
             self.tag_container.setLayout(self.tag_layout)
             scroll.setWidget(self.tag_container)
-            scroll.setMinimumHeight(120); scroll.setMaximumHeight(180)
             layout.addWidget(scroll)
         
         layout.addWidget(combo)
-        self.combo.currentTextChanged.connect(self._handle_combo_change)
 
     def set_unlabeled_text(self, text):
         self.unlabeled_text = text
@@ -187,19 +188,27 @@ class SelectionWidget(QWidget):
 
         if not self.selected_values:
             self._add_value(self.unlabeled_text)
+ 
+        if hasattr(self.combo, 'set_selected'):
+            if self.multi_select:
+                self.combo.set_selected(self.selected_values)
+            else:
+                self.combo.set_selected(self.selected_values[0] if self.selected_values else self.unlabeled_text)
         
         self._update_ui()
         self.selectionChanged.emit()
 
-    def _handle_combo_change(self, text):
-        if not text: return
+    def _handle_combo_activated(self, index):
+        text = self.combo.itemText(index)
+        if not text:
+            return
 
         changed = False
         if not self.multi_select:
             if not self.selected_values or text != self.selected_values[0]:
                 self.selected_values = [text]
                 changed = True
-        else: # Multi-select logic
+        else:
             if text != self.unlabeled_text and text not in self.selected_values:
                 if self.unlabeled_text in self.selected_values:
                     self._remove_value(self.unlabeled_text)
@@ -212,9 +221,16 @@ class SelectionWidget(QWidget):
             self.userMadeSelection.emit()
 
     def remove_tag(self, text):
+        """Remove a tag and update selection"""
         self._remove_value(text)
+        
+        # If nothing left, add unlabeled
         if not self.selected_values:
             self._add_value(self.unlabeled_text)
+        
+        # Update the combo box to reflect changes
+        if hasattr(self.combo, 'set_selected'):
+            self.combo.set_selected(self.selected_values)
         
         self._update_ui()
         self.selectionChanged.emit()
@@ -240,16 +256,6 @@ class SelectionWidget(QWidget):
 
     def _update_ui(self):
         self.update_active_label()
-        if not self.multi_select and self.selected_values:
-            current_selection = self.selected_values[0]
-            if self.combo.currentText() != current_selection:
-                self.combo.blockSignals(True)
-                self.combo.setCurrentText(current_selection)
-                self.combo.blockSignals(False)
-        elif self.multi_select and self.combo.currentIndex() != 0:
-             self.combo.blockSignals(True)
-             self.combo.setCurrentIndex(0)
-             self.combo.blockSignals(False)
 
     def update_active_label(self):
         if not self.selected_values:
@@ -275,12 +281,13 @@ class SelectionWidget(QWidget):
             widget.style().polish(widget); widget.style().unpolish(widget)
 
 class AnnotationDialog(QDialog):
-    def __init__(self, annotation=None, parent=None):
+    def __init__(self, annotation=None, parent=None, is_editing=True):
         super().__init__(parent)
         self.setWindowTitle("Category Choices")
         self.setModal(True)
         self.setMinimumWidth(1200); self.setMinimumHeight(800)
         
+        self.is_editing = is_editing
         self.settings = QSettings(ORGANIZATION_NAME, APP_NAME)
         self.mappings = {}; self.full_categories = {}
 
@@ -292,12 +299,6 @@ class AnnotationDialog(QDialog):
         if initial_data:
             self._set_values_from_data(initial_data)
 
-        initial_errors = self._get_validation_errors()
-        if initial_errors:
-            self.show_all_checkbox.setChecked(True)
-            print("Loaded incompatible data, enabling 'Show all options' automatically.")
-
-        self.show_all_checkbox.stateChanged.connect(self._on_settings_change)
         self.disable_alerts_checkbox.stateChanged.connect(self._on_settings_change)
 
         self.pa_selection.selectionChanged.connect(self._update_filters)
@@ -308,7 +309,6 @@ class AnnotationDialog(QDialog):
         self.hlb_selection.userMadeSelection.connect(self._handle_user_validation)
         self.posture_selection.userMadeSelection.connect(self._handle_user_validation)
 
-        self._update_filters()
         self._run_validation_check(is_initial_load=True)
 
     def _init_ui(self):
@@ -317,19 +317,41 @@ class AnnotationDialog(QDialog):
         main_layout = QVBoxLayout(main_widget); main_layout.setSpacing(24); main_layout.setContentsMargins(24, 24, 24, 24)
         
         options_layout = QHBoxLayout()
-        self.show_all_checkbox = QCheckBox("Show all options (allows incompatible selections)")
         self.disable_alerts_checkbox = QCheckBox("Disable all pop-up warnings")
         self.disable_alerts_checkbox.setChecked(self.settings.value(SETTINGS_DISABLE_ALERTS, False, type=bool))
-        options_layout.addWidget(self.show_all_checkbox); options_layout.addStretch(); options_layout.addWidget(self.disable_alerts_checkbox)
+        options_layout.addStretch(); options_layout.addWidget(self.disable_alerts_checkbox)
         main_layout.addLayout(options_layout)
         
-        grid = QGridLayout(); grid.setSpacing(16); grid.setColumnMinimumWidth(0, 220); grid.setColumnStretch(1, 2)
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        # Fixed column widths to prevent resizing
+        grid.setColumnMinimumWidth(0, 220)  # Category column
+        grid.setColumnMinimumWidth(1, 350)  # Choices column
+        grid.setColumnMinimumWidth(2, 300)  # Active labels column
+        # Set stretch factors - only category column should not stretch
+        grid.setColumnStretch(0, 0)  # Category - fixed width
+        grid.setColumnStretch(1, 2)  # Choices - can stretch
+        grid.setColumnStretch(2, 1)  # Active labels - can stretch less
+        
         headers = ["Category", "Choice(s)", "Active labels"]
         for i, header in enumerate(headers):
-            label = QLabel(header); label.setObjectName("headerLabel"); grid.addWidget(label, 0, i)
+            label = QLabel(header)
+            label.setObjectName("headerLabel")
+            grid.addWidget(label, 0, i)
         
-        self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo = (QComboBox() for _ in range(5))
+        # Create custom combo boxes
+        self.posture_combo = SearchableComboBox()
+        self.hlb_combo = MultiSelectComboBox()
+        self.pa_combo = SearchableComboBox()
+        self.bp_combo = MultiSelectComboBox()
+        self.es_combo = SearchableComboBox()
+        
         self.posture_active, self.hlb_active, self.pa_active, self.bp_active, self.es_active = (QLabel() for _ in range(5))
+        
+        # Set size policies for active labels to prevent excessive expansion
+        for label in [self.posture_active, self.hlb_active, self.pa_active, self.bp_active, self.es_active]:
+            label.setWordWrap(True)
+            label.setMinimumWidth(250)
         
         self.posture_selection = SelectionWidget(self.posture_combo, self.posture_active, multi_select=False)
         self.hlb_selection = SelectionWidget(self.hlb_combo, self.hlb_active, multi_select=True)
@@ -364,13 +386,17 @@ class AnnotationDialog(QDialog):
 
         button_container = QWidget()
         button_layout = QHBoxLayout(button_container); button_layout.setSpacing(10)
-        button_box = QDialogButtonBox()
-        ok_button = QPushButton("Save"); cancel_button = QPushButton("Cancel")
-        button_box.addButton(ok_button, QDialogButtonBox.ButtonRole.AcceptRole)
-        button_box.addButton(cancel_button, QDialogButtonBox.ButtonRole.RejectRole)
-        button_box.accepted.connect(self.accept); button_box.rejected.connect(self.reject)
-        button_layout.addStretch(); button_layout.addWidget(button_box)
+        self.button_box = QDialogButtonBox()
+        self.ok_button = QPushButton("SAVE CHANGES" if self.is_editing else "Save")
+        self.cancel_button = QPushButton("Cancel")
+        self.button_box.addButton(self.ok_button, QDialogButtonBox.ButtonRole.AcceptRole)
+        self.button_box.addButton(self.cancel_button, QDialogButtonBox.ButtonRole.RejectRole)
+        self.button_box.accepted.connect(self.accept); self.button_box.rejected.connect(self.reject)
+        button_layout.addStretch(); button_layout.addWidget(self.button_box)
         main_layout.addWidget(button_container)
+        
+        if not self.is_editing:
+            button_container.hide()
         
         main_scroll.setWidget(main_widget)
         dialog_layout = QVBoxLayout(self); dialog_layout.setContentsMargins(0, 0, 0, 0); dialog_layout.addWidget(main_scroll)
@@ -412,6 +438,10 @@ class AnnotationDialog(QDialog):
             super().accept()
             return
         
+        if self.disable_alerts_checkbox.isChecked():
+            super().accept()
+            return
+        
         error_messages = []
         if CAT_POSTURE in errors:
             error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible.")
@@ -429,74 +459,35 @@ class AnnotationDialog(QDialog):
 
     def _on_settings_change(self):
         self.settings.setValue(SETTINGS_DISABLE_ALERTS, self.disable_alerts_checkbox.isChecked())
-        self._update_filters()
         self._run_validation_check()
 
     def _handle_user_validation(self):
-        if self.show_all_checkbox.isChecked() and not self.disable_alerts_checkbox.isChecked():
+        if not self.disable_alerts_checkbox.isChecked():
             errors = self._get_validation_errors()
             if errors:
                 error_messages = []
-                if CAT_POSTURE in errors: error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible.")
-                if CAT_HLB in errors: error_messages.append(f"HLB(s) {', '.join(errors[CAT_HLB])} are incompatible.")
-                msg = "A potential mismatch has been detected:\n\n" + "\n".join(f"- {e}" for e in error_messages)
-                QMessageBox.warning(self, "Potential Mismatch", msg)
+                if CAT_POSTURE in errors: error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible with the selected PA Type.")
+                if CAT_HLB in errors: error_messages.append(f"HLB(s) {', '.join(errors[CAT_HLB])} are incompatible with the selected PA Type.")
+                msg = "⚠️ Incompatible selection detected:\n\n" + "\n".join(f"• {e}" for e in error_messages) + "\n\nYou can still save this annotation, but please verify the selection is correct."
+                QMessageBox.warning(self, "Incompatible Selection", msg)
     
     def _update_filters(self):
-        if self.show_all_checkbox.isChecked():
-            self._update_combo_items(self.pa_combo, self.full_categories[CAT_PA])
-            self._update_combo_items(self.hlb_combo, self.full_categories[CAT_HLB])
-            self._update_combo_items(self.posture_combo, self.full_categories[CAT_POSTURE])
-        else:
-            self._apply_filters()
+        # Always show all options - no filtering
         self._run_validation_check()
-
-    def _apply_filters(self):
-        selected_pa = self.pa_selection.selected_values[0]
-        selected_hlbs = []
-        for h in self.hlb_selection.selected_values:
-            if h != self.hlb_selection.unlabeled_text:
-                selected_hlbs.append(h)
-        selected_posture = self.posture_selection.selected_values[0]
-
-        all_pas = self.full_categories[CAT_PA]
-        if len(selected_hlbs) == 1:
-            pas_for_hlb = set(self.mappings['HLB_to_PA'].get(selected_hlbs[0], all_pas))
-        else:
-            pas_for_hlb = set(all_pas)
-        pas_for_posture = set(self.mappings['POS_to_PA'].get(selected_posture, all_pas))
-        permissible_pas = sorted(list(pas_for_hlb.intersection(pas_for_posture)))
-        permissible_pas.insert(0, all_pas[0])
-
-        all_hlbs = self.full_categories[CAT_HLB]
-        mapped_hlb = self.mappings['PA_to_HLB'].get(selected_pa)
-        if mapped_hlb:
-            permissible_hlb = [all_hlbs[0], mapped_hlb]
-        else:
-            permissible_hlb = all_hlbs
-
-        all_postures = self.full_categories[CAT_POSTURE]
-        mapped_postures = self.mappings['PA_to_POS'].get(selected_pa, all_postures)
-        permissible_postures = [all_postures[0]] + sorted([p for p in mapped_postures if p != all_postures[0]])
-
-        self._update_combo_items(self.pa_combo, permissible_pas, self.pa_selection)
-        self._update_combo_items(self.hlb_combo, permissible_hlb, self.hlb_selection)
-        self._update_combo_items(self.posture_combo, permissible_postures, self.posture_selection)
 
     def _run_validation_check(self, is_initial_load=False):
         self._clear_all_invalid_styles()
         errors = self._get_validation_errors()
         if not errors: return
         
-        if is_initial_load:
-            error_messages = []
-            if CAT_POSTURE in errors: error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible.")
-            if CAT_HLB in errors: error_messages.append(f"HLB(s) {', '.join(errors[CAT_HLB])} are incompatible.")
-            msg = "The loaded annotation has incompatible values:\n\n" + "\n".join(f"- {e}" for e in error_messages)
-            QMessageBox.warning(self, "Incompatible Annotation", msg)
+        self._apply_invalid_styles(errors)
         
-        if self.disable_alerts_checkbox.isChecked() or is_initial_load:
-            self._apply_invalid_styles(errors)
+        if is_initial_load and not self.disable_alerts_checkbox.isChecked():
+            error_messages = []
+            if CAT_POSTURE in errors: error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible with the selected PA Type.")
+            if CAT_HLB in errors: error_messages.append(f"HLB(s) {', '.join(errors[CAT_HLB])} are incompatible with the selected PA Type.")
+            msg = "⚠️ The loaded annotation has incompatible values:\n\n" + "\n".join(f"• {e}" for e in error_messages) + "\n\nYou can still save this annotation, but please verify the selection is correct."
+            QMessageBox.warning(self, "Incompatible Annotation", msg)
             
     def _get_validation_errors(self):
         errors = defaultdict(list)
@@ -540,13 +531,26 @@ class AnnotationDialog(QDialog):
                 widget = item.widget() if item else None
                 if isinstance(widget, TagWidget):
                     widget.set_invalid(False)
+
+    def closeEvent(self, event):
+        if not self.is_editing:
+            self.accept()
+        super().closeEvent(event)
         
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
+        if event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_5: 
+            self.selectCategoryByIndex(event.key() - Qt.Key.Key_1)
+        elif event.key() == Qt.Key.Key_Escape:
+            self.accept()
+            return
         super().keyPressEvent(event)
+    
     def selectCategoryByIndex(self, index):
-        category_combos = [ self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo ]
-        if 0 <= index < len(category_combos): category_combos[index].showPopup()
+        category_combos = [self.posture_combo, self.hlb_combo, self.pa_combo, self.bp_combo, self.es_combo]
+        if 0 <= index < len(category_combos):
+            combo = category_combos[index]
+            combo.focus_search()
+    
     def load_mappings(self):
         try:
             path = resource_path('data/mapping/mapping.json')
@@ -555,6 +559,7 @@ class AnnotationDialog(QDialog):
             self.mappings['POS_to_PA'] = defaultdict(list); [[self.mappings['POS_to_PA'][pos].append(pa) for pos in postures] for pa, postures in self.mappings.get('PA_to_POS', {}).items()]
             return True
         except Exception as e: QMessageBox.critical(self, "Config Error", f"Could not load mapping.json:\n{e}"); return False
+    
     def load_categories(self):
         try:
             path = resource_path('data/categories/categories.csv')
@@ -563,34 +568,253 @@ class AnnotationDialog(QDialog):
                 self.full_categories = { CAT_POSTURE: ["Posture_Unlabeled"] + categories[CAT_POSTURE], CAT_HLB: ["HLB_Unlabeled"] + categories[CAT_HLB], CAT_PA: ["PA_Type_Unlabeled"] + categories[CAT_PA], CAT_BP: ["CP_Unlabeled"] + categories[CAT_BP], CAT_ES: ["ES_Unlabeled"] + categories[CAT_ES] }
             return True
         except Exception as e: QMessageBox.critical(self, "Config Error", f"Could not load categories.csv:\n{e}"); return False
+    
     def _populate_combos(self):
-        self.posture_combo.addItems(self.full_categories[CAT_POSTURE]); self.hlb_combo.addItems(self.full_categories[CAT_HLB]); self.pa_combo.addItems(self.full_categories[CAT_PA]); self.bp_combo.addItems(self.full_categories[CAT_BP]); self.es_combo.addItems(self.full_categories[CAT_ES])
-        self.posture_selection.set_unlabeled_text(self.full_categories[CAT_POSTURE][0]); self.hlb_selection.set_unlabeled_text(self.full_categories[CAT_HLB][0]); self.pa_selection.set_unlabeled_text(self.full_categories[CAT_PA][0]); self.bp_selection.set_unlabeled_text(self.full_categories[CAT_BP][0]); self.es_selection.set_unlabeled_text(self.full_categories[CAT_ES][0])
-    def _update_combo_items(self, combo, new_items, selection_widget=None):
-        combo.blockSignals(True)
-        current_val = selection_widget.selected_values[0] if selection_widget and not selection_widget.multi_select and selection_widget.selected_values else combo.currentText()
-        combo.clear(); combo.addItems(new_items)
-        if current_val in new_items: combo.setCurrentText(current_val)
-        else:
-            if selection_widget and not selection_widget.multi_select:
-                selection_widget.set_values([new_items[0]])
-                QMessageBox.information(self, "Selection Reset", f"'{current_val}' was reset due to incompatibility.")
-        combo.blockSignals(False)
+        # Set items for all combos
+        self.posture_combo.set_items(self.full_categories[CAT_POSTURE])
+        self.hlb_combo.set_items(self.full_categories[CAT_HLB])
+        self.pa_combo.set_items(self.full_categories[CAT_PA])
+        self.bp_combo.set_items(self.full_categories[CAT_BP])
+        self.es_combo.set_items(self.full_categories[CAT_ES])
+        
+        # Set unlabeled text on SelectionWidget instances
+        self.posture_selection.set_unlabeled_text(self.full_categories[CAT_POSTURE][0])
+        self.hlb_selection.set_unlabeled_text(self.full_categories[CAT_HLB][0])
+        self.pa_selection.set_unlabeled_text(self.full_categories[CAT_PA][0])
+        self.bp_selection.set_unlabeled_text(self.full_categories[CAT_BP][0])
+        self.es_selection.set_unlabeled_text(self.full_categories[CAT_ES][0])
+        
+        # Also set unlabeled text on the MultiSelectComboBox instances
+        self.hlb_combo.set_unlabeled_text(self.full_categories[CAT_HLB][0])
+        self.bp_combo.set_unlabeled_text(self.full_categories[CAT_BP][0])
+        
+        # Connect signals for single-select combos
+        self.posture_combo.itemSelected.connect(lambda text: self._on_combo_selection(self.posture_selection, text))
+        self.pa_combo.itemSelected.connect(lambda text: self._on_combo_selection(self.pa_selection, text))
+        self.es_combo.itemSelected.connect(lambda text: self._on_combo_selection(self.es_selection, text))
+        
+        # Connect signals for multi-select combos
+        self.hlb_combo.selectionChanged.connect(lambda items: self._on_multi_selection(self.hlb_selection, items))
+        self.bp_combo.selectionChanged.connect(lambda items: self._on_multi_selection(self.bp_selection, items))
+    
+    def _on_combo_selection(self, selection_widget, text):
+        """Handle single selection from custom combo"""
+        if text:
+            selection_widget.selected_values = [text]
+            selection_widget._update_ui()
+            selection_widget.selectionChanged.emit()
+            selection_widget.userMadeSelection.emit()
+    
+    def _on_multi_selection(self, selection_widget, items):
+        if items and len(items) > 1 and selection_widget.unlabeled_text in items:
+            items = [i for i in items if i != selection_widget.unlabeled_text]
+        
+        # If nothing selected, use unlabeled
+        if not items:
+            items = [selection_widget.unlabeled_text]
+        
+        # Update the selection widget's selected values
+        selection_widget.selected_values = items
+        
+        # Rebuild tags
+        if selection_widget.multi_select:
+            # Clear existing tags
+            while selection_widget.tag_layout.count() > 0:
+                item = selection_widget.tag_layout.takeAt(0)
+                if item and item.widget():
+                    item.widget().deleteLater()
+            
+            # Add tags for non-unlabeled items
+            for value in items:
+                if value != selection_widget.unlabeled_text:
+                    tag = TagWidget(value)
+                    tag.removed.connect(lambda text, sw=selection_widget: self._on_tag_removed(sw, text))
+                    selection_widget.tag_layout.addWidget(tag)
+        
+        # Update the active label
+        selection_widget.update_active_label()
+        
+        # Emit signals
+        selection_widget.selectionChanged.emit()
+        selection_widget.userMadeSelection.emit()
+
+    def _on_tag_removed(self, selection_widget, text):
+        selection_widget.remove_tag(text)
+        
+        # Update the combo box to reflect the removal
+        if hasattr(selection_widget.combo, 'set_selected'):
+            remaining = [v for v in selection_widget.selected_values if v != text]
+            if not remaining:
+                remaining = [selection_widget.unlabeled_text]
+            selection_widget.combo.set_selected(remaining)
+    
     def _get_stylesheet(self):
         return """
-            QWidget { background-color: #1e1e1e; color: #ffffff; font-size: 13px; }
-            QLabel#headerLabel { font-weight: bold; color: #ffffff; font-size: 14px; padding-bottom: 8px; }
-            QLabel[category="true"] { padding: 8px 12px; background-color: #3d3d3d; border-radius: 4px; font-weight: bold; }
-            QWidget#notesContainer { background-color: #2a2a2a; border-radius: 4px; padding: 12px; }
-            QLabel#notesSublabel { color: #888888; font-size: 12px; padding: 4px 0; }
-            QCheckBox { spacing: 8px; }
-            QComboBox { background-color: #2d2d2d; border: 1px solid #3d3d3d; border-radius: 4px; padding: 8px 12px; min-width: 400px; }
-            QWidget[invalid="true"] > QComboBox { border: 1px solid #e53935; }
-            QLineEdit { padding: 10px; background-color: #2d2d2d; border: 1px solid #3d3d3d; border-radius: 4px; }
-            QPushButton { padding: 10px 24px; border-radius: 4px; font-weight: bold; border: none; }
-            QPushButton[text="Save"] { background-color: #2b79ff; color: white; }
-            QPushButton[text="Save"]:hover { background-color: #3d8aff; }
-            QPushButton[text="Cancel"] { background-color: #666666; color: white; }
-            QPushButton[text="Cancel"]:hover { background-color: #777777; }
-            QLabel { padding: 8px 12px; }
+            QWidget { 
+                background-color: #1e1e1e; 
+                color: #ffffff; 
+                font-size: 13px; 
+            }
+            
+            QLabel#headerLabel { 
+                font-weight: bold; 
+                color: #ffffff; 
+                font-size: 14px; 
+                padding: 8px 12px; 
+                background-color: #2a2a2a;
+                border-radius: 4px;
+            }
+            
+            QLabel[category="true"] { 
+                padding: 10px 14px; 
+                background-color: #2a2a2a; 
+                border-radius: 6px; 
+                font-weight: bold;
+                font-size: 13px;
+                border: 1px solid #3d3d3d;
+            }
+            
+            QWidget#notesContainer { 
+                background-color: #252525; 
+                border-radius: 6px; 
+                padding: 16px; 
+                border: 1px solid #3d3d3d;
+            }
+            
+            QLabel#notesSublabel { 
+                color: #999999; 
+                font-size: 11px; 
+                padding: 2px 0; 
+            }
+            
+            QCheckBox { 
+                spacing: 8px; 
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #3d3d3d;
+                border-radius: 3px;
+                background-color: #2d2d2d;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #2b79ff;
+                background-color: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #2b79ff;
+                border-color: #2b79ff;
+                image: url(none);
+            }
+            QCheckBox::indicator:checked:hover {
+                background-color: #3d8aff;
+                border-color: #3d8aff;
+            }
+            
+            QComboBox { 
+                background-color: #252525; 
+                border: 2px solid #3d3d3d; 
+                border-radius: 6px; 
+                padding: 10px 14px;
+                min-height: 20px;
+                font-size: 13px;
+            }
+            QComboBox:hover {
+                border-color: #4a4a4a;
+                background-color: #2a2a2a;
+            }
+            QComboBox:focus {
+                border-color: #2b79ff;
+                background-color: #2a2a2a;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 30px;
+                border-left: 1px solid #3d3d3d;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border: none;
+                width: 0;
+                height: 0;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #888888;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #252525;
+                border: 2px solid #3d3d3d;
+                border-radius: 4px;
+                selection-background-color: #2b79ff;
+                color: #ffffff;
+                padding: 4px;
+            }
+            
+            QWidget[invalid="true"] > QComboBox { 
+                border: 2px solid #e53935; 
+            }
+            
+            QLineEdit { 
+                padding: 10px 14px; 
+                background-color: #252525; 
+                border: 2px solid #3d3d3d; 
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            QLineEdit:hover {
+                border-color: #4a4a4a;
+                background-color: #2a2a2a;
+            }
+            QLineEdit:focus {
+                border-color: #2b79ff;
+                background-color: #2a2a2a;
+            }
+            
+            QPushButton { 
+                padding: 12px 28px; 
+                border-radius: 6px; 
+                font-weight: bold; 
+                border: none;
+                font-size: 13px;
+            }
+            QPushButton[text="Save"], QPushButton[text="SAVE CHANGES"] { 
+                background-color: #2b79ff; 
+                color: white; 
+            }
+            QPushButton[text="Save"]:hover, QPushButton[text="SAVE CHANGES"]:hover { 
+                background-color: #3d8aff; 
+            }
+            QPushButton[text="Save"]:pressed, QPushButton[text="SAVE CHANGES"]:pressed { 
+                background-color: #1a5cbd; 
+            }
+            QPushButton[text="Cancel"] { 
+                background-color: #3d3d3d; 
+                color: white; 
+            }
+            QPushButton[text="Cancel"]:hover { 
+                background-color: #4a4a4a; 
+            }
+            QPushButton[text="Cancel"]:pressed { 
+                background-color: #2d2d2d; 
+            }
+            
+            QLabel { 
+                padding: 8px 12px;
+                background-color: #252525;
+                border-radius: 6px;
+                border: 1px solid #3d3d3d;
+            }
+            
+            QScrollArea {
+                border: 2px solid #3d3d3d;
+                border-radius: 6px;
+                background-color: #252525;
+                padding: 4px;
+            }
         """
