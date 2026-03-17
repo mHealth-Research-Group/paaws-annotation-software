@@ -16,7 +16,7 @@ from PyQt6.QtQuickWidgets import QQuickWidget
 from src.slider import CustomSlider
 from src.models import TimelineAnnotation
 from src.widgets import TimelineWidget
-from src.dialogs import AnnotationDialog
+from src.dialogs import AnnotationDialog, AnnotatorSettings, prompt_annotator_name
 from src.shortcuts import ShortcutManager
 from src.annotation_manager import AnnotationManager
 from src.utils import AutosaveManager
@@ -39,7 +39,18 @@ class VideoPlayerApp(QMainWindow):
         else:
             self.setGeometry(100, 100, 1280, 1000)
 
-        
+        # Prompt for annotator identity on first launch
+        if not AnnotatorSettings.is_configured():
+            uid, uname = prompt_annotator_name(self)
+            if not uid:
+                # User cancelled first-time setup — use NA as fallback
+                uid, uname = "NA", "NA"
+            self.annotator_user_id = uid
+            self.annotator_user_name = uname
+        else:
+            self.annotator_user_id, self.annotator_user_name = AnnotatorSettings.get()
+
+
         self.autosave_manager = AutosaveManager(60000) 
         self.current_video_path = None
         self.video_hash = 0
@@ -347,6 +358,10 @@ class VideoPlayerApp(QMainWindow):
         self.settings_menu.addAction(load_action); self.settings_menu.addAction(export_action); self.settings_menu.addAction(new_video_action)
         self.settings_menu.addSeparator(); self.settings_menu.addAction(self.rotate_action); self.settings_menu.addSeparator()
         self.settings_menu.addAction(self.toggle_shortcuts_action)
+        self.settings_menu.addSeparator()
+        change_annotator_action = QAction("Change Annotator Name", self)
+        change_annotator_action.triggered.connect(self._change_annotator_name)
+        self.settings_menu.addAction(change_annotator_action)
         self.gear_button.setMenu(self.settings_menu)
         print("--- setupUI: Finished.")
 
@@ -384,6 +399,12 @@ class VideoPlayerApp(QMainWindow):
             col_layout.addStretch()
             parent_layout.addWidget(col_widget)
 
+
+    def _change_annotator_name(self):
+        uid, uname = prompt_annotator_name(self)
+        if uid:
+            self.annotator_user_id = uid
+            self.annotator_user_name = uname
 
     def loadQmlSources(self):
         """Loads the QML source file into the QuickWidgets."""

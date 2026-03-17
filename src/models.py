@@ -5,10 +5,12 @@ from datetime import datetime
 
 @dataclass
 class TimelineAnnotation:
-    def __init__(self, start_time=0, end_time=0):
+    def __init__(self, start_time=0, end_time=0, user_id="NA", user_name="NA"):
         self.id = str(uuid.uuid4())
         self.start_time = start_time
         self.end_time = end_time
+        self.user_id = user_id
+        self.user_name = user_name
         self.shape = {
             "x1": None,
             "x2": None,
@@ -23,8 +25,8 @@ class TimelineAnnotation:
             "id": str(uuid.uuid4()),
             "meta": {
                 "datetime": datetime.now().isoformat(),
-                "user_id": "NA",
-                "user_name": "NA"
+                "user_id": self.user_id,
+                "user_name": self.user_name
             },
             "body": "[]"
         }

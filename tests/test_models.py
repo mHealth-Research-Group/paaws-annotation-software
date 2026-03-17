@@ -78,6 +78,25 @@ def test_string_representation():
     expected = f"Annotation {annotation.id}: 10.5 - 20.5"
     assert str(annotation) == expected
 
+def test_timeline_annotation_with_user_info():
+    annotation = TimelineAnnotation(
+        start_time=5, end_time=15,
+        user_id="abc-123", user_name="Jane Doe"
+    )
+    assert annotation.user_id == "abc-123"
+    assert annotation.user_name == "Jane Doe"
+    meta = annotation.comments[0]["meta"]
+    assert meta["user_id"] == "abc-123"
+    assert meta["user_name"] == "Jane Doe"
+
+def test_timeline_annotation_default_user_info():
+    annotation = TimelineAnnotation()
+    assert annotation.user_id == "NA"
+    assert annotation.user_name == "NA"
+    meta = annotation.comments[0]["meta"]
+    assert meta["user_id"] == "NA"
+    assert meta["user_name"] == "NA"
+
 def test_update_comment_body_with_defaults():
     annotation = TimelineAnnotation()
     annotation.update_comment_body()

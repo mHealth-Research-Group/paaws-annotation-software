@@ -1,6 +1,7 @@
 import sys
 import json
 import csv
+import uuid
 from collections import defaultdict
 
 from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -15,6 +16,69 @@ from src.custom_combo import SearchableComboBox, MultiSelectComboBox
 APP_NAME = "PAAWS-Annotation-Software"
 ORGANIZATION_NAME = "PAAWS"
 SETTINGS_DISABLE_ALERTS = "disableAlerts"
+SETTINGS_USER_ID = "annotator/user_id"
+SETTINGS_USER_NAME = "annotator/user_name"
+
+
+class AnnotatorSettings:
+    """Static helper for reading/writing annotator identity in QSettings."""
+
+    @staticmethod
+    def get():
+        settings = QSettings(ORGANIZATION_NAME, APP_NAME)
+        return (
+            settings.value(SETTINGS_USER_ID, ""),
+            settings.value(SETTINGS_USER_NAME, ""),
+        )
+
+    @staticmethod
+    def save(user_id, user_name):
+        settings = QSettings(ORGANIZATION_NAME, APP_NAME)
+        settings.setValue(SETTINGS_USER_ID, user_id)
+        settings.setValue(SETTINGS_USER_NAME, user_name)
+
+    @staticmethod
+    def is_configured():
+        uid, uname = AnnotatorSettings.get()
+        return bool(uid) and bool(uname)
+
+
+def prompt_annotator_name(parent=None):
+    """Show a dialog asking the user for their annotator name.
+
+    Generates a UUID on first setup; preserves existing UUID on name change.
+    Returns (user_id, user_name) or (None, None) if cancelled.
+    """
+    existing_id, existing_name = AnnotatorSettings.get()
+
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Annotator Identity")
+    dialog.setMinimumWidth(350)
+    layout = QVBoxLayout(dialog)
+
+    layout.addWidget(QLabel("Enter your name (this will be saved with every annotation):"))
+    name_input = QLineEdit()
+    name_input.setPlaceholderText("Your full name")
+    if existing_name:
+        name_input.setText(existing_name)
+    layout.addWidget(name_input)
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None, None
+
+    name = name_input.text().strip()
+    if not name:
+        QMessageBox.warning(parent, "Invalid Name", "Annotator name cannot be empty.")
+        return None, None
+
+    user_id = existing_id if existing_id else str(uuid.uuid4())
+    AnnotatorSettings.save(user_id, name)
+    return user_id, name
 
 CAT_POSTURE = "POSTURE"
 CAT_HLB = "HIGH LEVEL BEHAVIOR"

@@ -87,7 +87,11 @@ class AnnotationManager:
                                     "Cannot start an annotation within an existing one.")
                 return
 
-            self.app.current_annotation = TimelineAnnotation(start_time=current_time)
+            self.app.current_annotation = TimelineAnnotation(
+                start_time=current_time,
+                user_id=self.app.annotator_user_id,
+                user_name=self.app.annotator_user_name,
+            )
             temp_labels = self.last_used_labels.copy()
             temp_labels["special_notes"] = ""
             self.app.current_annotation.update_comment_body(**temp_labels)
@@ -277,7 +281,9 @@ class AnnotationManager:
 
         merged_annotation = TimelineAnnotation(
             start_time=prev_annotation.start_time,
-            end_time=current_annotation.end_time
+            end_time=current_annotation.end_time,
+            user_id=self.app.annotator_user_id,
+            user_name=self.app.annotator_user_name,
         )
         if current_annotation.comments:
             merged_annotation.copy_comments_from(current_annotation)
@@ -325,7 +331,9 @@ class AnnotationManager:
 
         merged_annotation = TimelineAnnotation(
             start_time=current_annotation.start_time,
-            end_time=next_annotation.end_time
+            end_time=next_annotation.end_time,
+            user_id=self.app.annotator_user_id,
+            user_name=self.app.annotator_user_name,
         )
 
         if current_annotation.comments:
@@ -367,7 +375,9 @@ class AnnotationManager:
 
         new_annotation = TimelineAnnotation(
             start_time=current_time,
-            end_time=annotation_to_split.end_time
+            end_time=annotation_to_split.end_time,
+            user_id=self.app.annotator_user_id,
+            user_name=self.app.annotator_user_name,
         )
         new_annotation.copy_comments_from(annotation_to_split)
         original_end_time = annotation_to_split.end_time

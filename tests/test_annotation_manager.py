@@ -11,6 +11,8 @@ class MockApp:
         self.media_player = {'_position': 0}
         self.updateAnnotationTimeline = MagicMock()
         self.setPosition = MagicMock()
+        self.annotator_user_id = "test-uuid-1234"
+        self.annotator_user_name = "Test User"
 
 @pytest.fixture
 def mock_app():
