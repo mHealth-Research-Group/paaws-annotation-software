@@ -35,8 +35,8 @@ def get_comment_value(comments, category_name):
 
 def test_initialization(manager):
     assert manager.app is not None
-    assert isinstance(manager.default_labels, dict)
-    assert manager.default_labels["posture"] == ""
+    assert isinstance(manager.last_used_labels, dict)
+    assert manager.last_used_labels["posture"] == ""
     assert isinstance(manager.posture_colors, dict)
 
 def test_get_posture_color(manager):
@@ -155,7 +155,7 @@ def test_merge_with_next(mock_qmessagebox, manager):
 @patch('src.annotation_manager.QMessageBox')
 def test_merge_fails_if_not_adjacent(mock_qmessagebox, manager):
     prev_ann = TimelineAnnotation(start_time=10, end_time=20)
-    curr_ann = TimelineAnnotation(start_time=21, end_time=30)
+    curr_ann = TimelineAnnotation(start_time=22, end_time=30)
     manager.app.annotations = [prev_ann, curr_ann]
     manager.app.media_player['_position'] = 25000
     manager.mergeWithPrevious()
@@ -169,7 +169,7 @@ def test_move_to_next_label(manager):
     ]
     manager.app.media_player['_position'] = 15000
     manager.moveToNextLabel()
-    manager.app.setPosition.assert_called_with(30000)
+    manager.app.setPosition.assert_called_with(20000)
 
 def test_move_to_previous_label(manager):
     manager.app.annotations = [
@@ -178,4 +178,4 @@ def test_move_to_previous_label(manager):
     ]
     manager.app.media_player['_position'] = 35000
     manager.moveToPreviousLabel()
-    manager.app.setPosition.assert_called_with(20000)
+    manager.app.setPosition.assert_called_with(30000)

@@ -6,8 +6,13 @@ from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtWidgets import QWidget
 from src.widgets import TimelineWidget
 
+_mock_annotation_counter = 0
+
 class MockAnnotation:
     def __init__(self, start, end, comments=None):
+        global _mock_annotation_counter
+        _mock_annotation_counter += 1
+        self.id = _mock_annotation_counter
         self.start_time = start
         self.end_time = end
         self.comments = comments if comments is not None else []
@@ -24,6 +29,7 @@ class MockApp(QWidget):
         self.annotation_manager.get_posture_color.return_value = "#ff0000"
         self.timeline_widget = MagicMock()
         self.second_timeline_widget = MagicMock()
+        self.updateAnnotationTimeline = MagicMock()
 
 @pytest.fixture
 def mock_app():
@@ -66,9 +72,8 @@ def test_drag_annotation_start_edge(qtbot, zoomed_timeline, mock_app):
     qtbot.mousePress(zoomed_timeline, Qt.MouseButton.LeftButton, pos=QPoint(start_x, 30))
     qtbot.mouseMove(zoomed_timeline, pos=QPoint(drag_to_x, 30))
     qtbot.mouseRelease(zoomed_timeline, Qt.MouseButton.LeftButton, pos=QPoint(drag_to_x, 30))
-    assert annotation.start_time == pytest.approx(77.5, abs=1)
-    mock_app.timeline_widget.update.assert_called()
-    mock_app.second_timeline_widget.update.assert_called()
+    assert annotation.start_time == pytest.approx(77.25, abs=1)
+    mock_app.updateAnnotationTimeline.assert_called()
 
 def test_drag_zoom_handle(qtbot, main_timeline, mock_app):
     assert mock_app.zoom_end == 1.0

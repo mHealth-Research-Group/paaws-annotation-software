@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QWidget
 from src.video_player import VideoPlayerApp
+from importlib.metadata import version
+__version__ = version("paaws-annotation-software")
 
 @pytest.fixture
 def app(qtbot, monkeypatch):
@@ -50,7 +52,7 @@ def app(qtbot, monkeypatch):
 
 def test_initialization(app):
     assert app is not None
-    assert app.windowTitle() == "PAAWS Annotation Software"
+    assert app.windowTitle() == f"PAAWS Annotation Software v{__version__}"
     assert app.autosave_manager is not None
     assert app.annotation_manager is not None
     assert app.shortcut_manager is not None

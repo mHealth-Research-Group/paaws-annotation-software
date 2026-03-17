@@ -20,6 +20,9 @@ from src.dialogs import AnnotationDialog
 from src.shortcuts import ShortcutManager
 from src.annotation_manager import AnnotationManager
 from src.utils import AutosaveManager
+from importlib.metadata import version
+__version__ = version("paaws-annotation-software")
+
 class VideoPlayerApp(QMainWindow):
     SYNC_THRESHOLD = 150
     MIN_ZOOM_DURATION = 600000 # 10 minutes in ms
@@ -27,7 +30,7 @@ class VideoPlayerApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PAAWS Annotation Software")
+        self.setWindowTitle(f"PAAWS Annotation Software v{__version__}")
         screen = QGuiApplication.primaryScreen()
         if screen:
             available_geometry = screen.availableGeometry()
