@@ -1110,7 +1110,7 @@ class VideoPlayerApp(QMainWindow):
                     data = json.load(f)
        
                 if self.current_video_path:
-                    saved_hash = data.get("videoHash", 0)
+                    saved_hash = data.get("videoHash", data.get("videohash", 0))
                     if saved_hash != self.video_hash:
                         reply = QMessageBox.question(
                             self,

@@ -93,7 +93,7 @@ class AutosaveManager:
                 with open(autosave_path, 'r') as f:
                     data = json.load(f)
                 if data.get("video_path") == video_path:
-                    saved_hash = data.get("videoHash", 0)
+                    saved_hash = data.get("videoHash", data.get("videohash", 0))
                     return data, saved_hash == current_hash
             except Exception as e:
                 print(f"Failed to load autosave: {str(e)}")

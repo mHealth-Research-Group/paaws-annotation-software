@@ -373,7 +373,7 @@ class AnnotationDialog(QDialog):
         self.hlb_selection.userMadeSelection.connect(self._handle_user_validation)
         self.posture_selection.userMadeSelection.connect(self._handle_user_validation)
 
-        self._run_validation_check(is_initial_load=True)
+        self._run_validation_check()
 
     def _init_ui(self):
         main_scroll = QScrollArea(); main_scroll.setWidgetResizable(True)
@@ -526,32 +526,18 @@ class AnnotationDialog(QDialog):
         self._run_validation_check()
 
     def _handle_user_validation(self):
-        if not self.disable_alerts_checkbox.isChecked():
-            errors = self._get_validation_errors()
-            if errors:
-                error_messages = []
-                if CAT_POSTURE in errors: error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible with the selected PA Type.")
-                if CAT_HLB in errors: error_messages.append(f"HLB(s) {', '.join(errors[CAT_HLB])} are incompatible with the selected PA Type.")
-                msg = "⚠️ Incompatible selection detected:\n\n" + "\n".join(f"• {e}" for e in error_messages) + "\n\nYou can still save this annotation, but please verify the selection is correct."
-                QMessageBox.warning(self, "Incompatible Selection", msg)
+        self._run_validation_check()
     
     def _update_filters(self):
         # Always show all options - no filtering
         self._run_validation_check()
 
-    def _run_validation_check(self, is_initial_load=False):
+    def _run_validation_check(self):
         self._clear_all_invalid_styles()
         errors = self._get_validation_errors()
         if not errors: return
-        
+
         self._apply_invalid_styles(errors)
-        
-        if is_initial_load and not self.disable_alerts_checkbox.isChecked():
-            error_messages = []
-            if CAT_POSTURE in errors: error_messages.append(f"Posture '{errors[CAT_POSTURE][0]}' is incompatible with the selected PA Type.")
-            if CAT_HLB in errors: error_messages.append(f"HLB(s) {', '.join(errors[CAT_HLB])} are incompatible with the selected PA Type.")
-            msg = "⚠️ The loaded annotation has incompatible values:\n\n" + "\n".join(f"• {e}" for e in error_messages) + "\n\nYou can still save this annotation, but please verify the selection is correct."
-            QMessageBox.warning(self, "Incompatible Annotation", msg)
             
     def _get_validation_errors(self):
         errors = defaultdict(list)
