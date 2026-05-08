@@ -19,7 +19,7 @@ from src.widgets import TimelineWidget
 from src.dialogs import AnnotationDialog, AnnotatorSettings, prompt_annotator_name
 from src.shortcuts import ShortcutManager
 from src.annotation_manager import AnnotationManager
-from src.utils import AutosaveManager
+from src.utils import AutosaveManager, SessionTracker
 from importlib.metadata import version
 __version__ = version("paaws-annotation-software")
 
@@ -51,7 +51,8 @@ class VideoPlayerApp(QMainWindow):
             self.annotator_user_id, self.annotator_user_name = AnnotatorSettings.get()
 
 
-        self.autosave_manager = AutosaveManager(60000) 
+        self.autosave_manager = AutosaveManager(60000)
+        self.session_tracker = SessionTracker()
         self.current_video_path = None
         self.video_hash = 0
         self.current_rotation = 0
@@ -735,7 +736,8 @@ class VideoPlayerApp(QMainWindow):
             except Exception as e: self.video_hash = 0; print(f"Warn: Hash failed {e}")
 
             
-            self.annotations = [] 
+            self.annotations = []
+            self.session_tracker.reset()
             autosave_data, hash_matches = self.autosave_manager.check_for_autosave(filename, self.video_hash)
             if autosave_data:
                 message = "An autosaved version of the annotations was found."
@@ -981,6 +983,14 @@ class VideoPlayerApp(QMainWindow):
                             "comments": annotation.comments
                         })
                     
+                    session_data = self.session_tracker.build_session_data(
+                        self.annotations,
+                        self.annotator_user_id,
+                        self.annotator_user_name,
+                    )
+                    if session_data:
+                        annotations_data["session"] = session_data
+
                     zipf.writestr('labels.json', json.dumps(annotations_data, indent=4))
 
                     if self.current_video_path and os.path.exists(self.current_video_path):

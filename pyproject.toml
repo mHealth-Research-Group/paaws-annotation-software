@@ -12,3 +12,6 @@ dependencies = [
     "pytest-mock>=3.10.0",
     "pytest-qt>=4.2.0",
 ]
+
+[tool.ruff]
+line-length = 120

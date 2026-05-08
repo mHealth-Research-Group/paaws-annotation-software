@@ -2,10 +2,92 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from datetime import datetime
 from typing import List, Optional, Tuple
 from src.models import TimelineAnnotation
 import sys
 from pathlib import Path
+
+class SessionTracker:
+    def __init__(self):
+        self._session_start = None
+        self._export_count = 0
+
+    def reset(self):
+        self._session_start = None
+        self._export_count = 0
+
+    def start(self):
+        if self._session_start is None:
+            self._session_start = datetime.now()
+
+    @property
+    def is_started(self):
+        return self._session_start is not None
+
+    def build_session_data(self, annotations, user_id, user_name):
+        if not self.is_started:
+            return None
+
+        now = datetime.now()
+        duration = (now - self._session_start).total_seconds()
+        self._export_count += 1
+
+        first_wall_clock = None
+        first_video_pos = None
+        last_wall_clock = None
+        last_video_pos = None
+        total_annotations = len(annotations)
+
+        # Derive first/last annotation by creation datetime from comments meta
+        dated_annotations = []
+        for ann in annotations:
+            if ann.comments:
+                meta = ann.comments[0].get("meta", {})
+                dt_str = meta.get("datetime")
+                if dt_str:
+                    try:
+                        dt = datetime.fromisoformat(dt_str)
+                        dated_annotations.append((dt, ann))
+                    except (ValueError, TypeError):
+                        pass
+
+        if dated_annotations:
+            dated_annotations.sort(key=lambda x: x[0])
+            first_dt, first_ann = dated_annotations[0]
+            last_dt, last_ann = dated_annotations[-1]
+            first_wall_clock = first_dt.isoformat()
+            first_video_pos = first_ann.start_time
+            last_wall_clock = last_dt.isoformat()
+            last_video_pos = last_ann.start_time
+
+        # Footage covered: span from earliest start_time to latest end_time
+        footage_covered = 0.0
+        if annotations:
+            earliest_start = min(a.start_time for a in annotations)
+            latest_end = max(a.end_time for a in annotations)
+            footage_covered = latest_end - earliest_start
+
+        data = {
+            "session_start": self._session_start.isoformat(),
+            "session_end": now.isoformat(),
+            "session_duration_seconds": round(duration, 2),
+            "annotator_user_id": user_id,
+            "annotator_user_name": user_name,
+            "first_annotation": {
+                "wall_clock": first_wall_clock,
+                "video_position_seconds": first_video_pos,
+            },
+            "last_annotation": {
+                "wall_clock": last_wall_clock,
+                "video_position_seconds": last_video_pos,
+            },
+            "total_annotations": total_annotations,
+            "footage_covered_seconds": footage_covered,
+            "export_count": self._export_count,
+        }
+        return data
+
 
 class AutosaveManager:
     def __init__(self, interval: int = 300000) -> None:

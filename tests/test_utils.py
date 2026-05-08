@@ -2,7 +2,7 @@ import os
 import json
 import pytest
 from unittest.mock import MagicMock
-from src.utils import AutosaveManager, autosave
+from src.utils import AutosaveManager, SessionTracker, autosave
 
 class MockAnnotation:
     def __init__(self, start, end, comments=None, id="mock_id"):
@@ -104,3 +104,71 @@ def test_autosave_decorator():
     
     instance.mock_method()
     mock_app.autosave.assert_called_once()
+
+
+class TestSessionTracker:
+    def test_initial_state(self):
+        tracker = SessionTracker()
+        assert tracker.is_started is False
+        assert tracker.build_session_data([], "uid", "name") is None
+
+    def test_start_records_time_and_is_idempotent(self):
+        tracker = SessionTracker()
+        tracker.start()
+        assert tracker.is_started is True
+        first_start = tracker._session_start
+        tracker.start()
+        assert tracker._session_start is first_start
+
+    def test_reset_clears_state(self):
+        tracker = SessionTracker()
+        tracker.start()
+        tracker.build_session_data([], "uid", "name")
+        tracker.reset()
+        assert tracker.is_started is False
+        assert tracker._export_count == 0
+
+    def test_build_session_data_no_annotations(self):
+        tracker = SessionTracker()
+        tracker.start()
+        data = tracker.build_session_data([], "uid", "Jane")
+        assert data is not None
+        assert data["annotator_user_id"] == "uid"
+        assert data["annotator_user_name"] == "Jane"
+        assert data["total_annotations"] == 0
+        assert data["footage_covered_seconds"] == 0.0
+        assert data["first_annotation"]["wall_clock"] is None
+        assert data["last_annotation"]["wall_clock"] is None
+        assert data["export_count"] == 1
+
+    def test_build_session_data_with_annotations(self):
+        tracker = SessionTracker()
+        tracker.start()
+        annotations = [
+            MockAnnotation(
+                start=10.0, end=50.0,
+                comments=[{"meta": {"datetime": "2026-03-17T10:08:12"}, "body": "[]"}],
+            ),
+            MockAnnotation(
+                start=60.0, end=120.0,
+                comments=[{"meta": {"datetime": "2026-03-17T11:40:03"}, "body": "[]"}],
+            ),
+        ]
+        data = tracker.build_session_data(annotations, "abc", "Bob")
+        assert data["total_annotations"] == 2
+        assert data["footage_covered_seconds"] == 110.0  # 120 - 10
+        assert data["first_annotation"]["wall_clock"] == "2026-03-17T10:08:12"
+        assert data["first_annotation"]["video_position_seconds"] == 10.0
+        assert data["last_annotation"]["wall_clock"] == "2026-03-17T11:40:03"
+        assert data["last_annotation"]["video_position_seconds"] == 60.0
+        assert data["session_duration_seconds"] >= 0
+
+    def test_export_count_increments(self):
+        tracker = SessionTracker()
+        tracker.start()
+        data1 = tracker.build_session_data([], "uid", "name")
+        assert data1["export_count"] == 1
+        data2 = tracker.build_session_data([], "uid", "name")
+        assert data2["export_count"] == 2
+        data3 = tracker.build_session_data([], "uid", "name")
+        assert data3["export_count"] == 3
