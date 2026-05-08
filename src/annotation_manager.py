@@ -150,7 +150,6 @@ class AnnotationManager:
             target_annotation = self.app.current_annotation
             is_editing = False
 
-        self.app.session_tracker.start()
         dialog = AnnotationDialog(target_annotation, self.app, is_editing=is_editing)
 
         if dialog.exec():

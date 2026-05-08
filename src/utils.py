@@ -21,6 +21,9 @@ class SessionTracker:
         if self._session_start is None:
             self._session_start = datetime.now()
 
+    def stop(self):
+        self._session_start = None
+
     @property
     def is_started(self):
         return self._session_start is not None

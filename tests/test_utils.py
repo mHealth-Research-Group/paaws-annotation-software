@@ -128,6 +128,14 @@ class TestSessionTracker:
         assert tracker.is_started is False
         assert tracker._export_count == 0
 
+    def test_stop_clears_active_session_without_resetting_export_count(self):
+        tracker = SessionTracker()
+        tracker.start()
+        tracker.build_session_data([], "uid", "name")
+        tracker.stop()
+        assert tracker.is_started is False
+        assert tracker._export_count == 1
+
     def test_build_session_data_no_annotations(self):
         tracker = SessionTracker()
         tracker.start()

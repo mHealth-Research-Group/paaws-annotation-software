@@ -799,6 +799,8 @@ class VideoPlayerApp(QMainWindow):
                  print("--- QML not ready, storing URL in _pending_source_url.")
                  self._pending_source_url = url
 
+            self.session_tracker.start()
+
             if not self.autosave_timer.isActive():
                 print("--- Starting autosave timer.")
                 self.autosave_timer.start()
@@ -1078,6 +1080,7 @@ class VideoPlayerApp(QMainWindow):
                             zipf.writestr(filename, output.getvalue())
                             output.close()
 
+                self.session_tracker.stop()
                 QMessageBox.information(self, "Success", "Annotations exported successfully")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export annotations: {str(e)}")

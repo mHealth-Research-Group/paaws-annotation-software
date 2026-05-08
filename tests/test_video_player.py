@@ -1,4 +1,6 @@
 import pytest
+import json
+from zipfile import ZipFile
 from unittest.mock import MagicMock
 
 from PyQt6.QtCore import QUrl
@@ -67,8 +69,25 @@ def test_open_file_sets_path_and_source(app, monkeypatch):
     app.openFile()
     
     assert app.current_video_path == "/fake/path/video.mp4"
+    assert app.session_tracker.is_started is True
     expected_url = QUrl.fromLocalFile("/fake/path/video.mp4")
     app.qml_root_main.setProperty.assert_any_call('source', expected_url)
+
+def test_export_stops_active_session(app, monkeypatch, tmp_path):
+    export_path = tmp_path / "labels.zip"
+    mock_file_dialog = MagicMock()
+    mock_file_dialog.getSaveFileName.return_value = (str(export_path), "ZIP Files (*.zip)")
+    monkeypatch.setattr("src.video_player.QFileDialog", mock_file_dialog)
+    monkeypatch.setattr("src.video_player.QMessageBox", MagicMock())
+
+    app.session_tracker.start()
+    app.saveAnnotations()
+
+    assert app.session_tracker.is_started is False
+    with ZipFile(export_path) as zipf:
+        labels = json.loads(zipf.read("labels.json"))
+    assert "session" in labels
+    assert labels["session"]["annotator_user_id"] == app.annotator_user_id
 
 def test_toggle_play_pause(app):
     app.current_video_path = "/fake/video.mp4"
