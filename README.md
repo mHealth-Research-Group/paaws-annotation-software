@@ -19,7 +19,7 @@ A PyQt6-based video annotation tool for labeling video content with temporal ann
 
 - Python 3.11+
 - PyQt6
-- See `requirements.txt` for full list of dependencies
+- See `pyproject.toml` for full dependency metadata
 
 ### Setup
 
@@ -29,7 +29,7 @@ git clone <repository-url>
 cd QtVideo
 
 # Install dependencies
-pip install -r requirements.txt
+pip install .
 
 # Run the application
 python main.py
@@ -89,7 +89,7 @@ To build manually with PyInstaller:
 
 ```bash
 # Install PyInstaller
-pip install pyinstaller
+pip install ".[build]"
 
 # Build (example for Windows)
 pyinstaller --name "PAAWS-Annotation-Software" --windowed --onefile \
@@ -102,7 +102,7 @@ pyinstaller --name "PAAWS-Annotation-Software" --windowed --onefile \
 
 ```bash
 # Install test dependencies
-pip install -r requirements-test.txt
+pip install ".[test]"
 
 # Run all tests
 pytest
