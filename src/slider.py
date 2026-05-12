@@ -2,9 +2,10 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
 
+
 class CustomSlider(QWidget):
     """A custom slider widget to replace QSlider for more control over appearance."""
-    
+
     sliderMoved = pyqtSignal(int)
     sliderPressed = pyqtSignal()
     sliderReleased = pyqtSignal()
@@ -28,10 +29,17 @@ class CustomSlider(QWidget):
         self.handle_radius = 8
         self.groove_height = 4
 
-    def value(self): return self._value
-    def minimum(self): return self._min
-    def maximum(self): return self._max
-    def isSliderDown(self): return self._is_dragging
+    def value(self):
+        return self._value
+
+    def minimum(self):
+        return self._min
+
+    def maximum(self):
+        return self._max
+
+    def isSliderDown(self):
+        return self._is_dragging
 
     def setRange(self, min_val, max_val):
         self._min = min_val
@@ -45,7 +53,7 @@ class CustomSlider(QWidget):
             self._value = clamped_value
             self.valueChanged.emit(self._value)
             self.update()
-    
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -89,7 +97,7 @@ class CustomSlider(QWidget):
         duration = self._max - self._min
         if duration == 0:
             return 0
-        
+
         ratio = (self._value - self._min) / duration
         position = ratio * self.width()
         return int(position)
@@ -98,7 +106,7 @@ class CustomSlider(QWidget):
     def _value_from_pos(self, pos):
         width = self.width()
         ratio = pos.x() / width if width > 0 else 0
-        ratio = max(0.0, min(1.0, ratio)) 
+        ratio = max(0.0, min(1.0, ratio))
         duration = self._max - self._min
         value = self._min + ratio * duration
         return int(value)

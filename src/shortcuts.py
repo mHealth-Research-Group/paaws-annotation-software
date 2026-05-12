@@ -1,10 +1,11 @@
 from PyQt6.QtGui import QAction
 
+
 class ShortcutManager:
     def __init__(self, app):
         self.app = app
         self.setupShortcuts()
-        
+
     def setupShortcuts(self):
         # Video control shortcuts
         self.spacebar_shortcut = QAction("Play/Pause", self.app)
@@ -102,14 +103,14 @@ class ShortcutManager:
 
     def setPlaybackRate(self, rate):
         """Tell the main app to set the playback rate."""
-        if hasattr(self.app, 'setPlaybackRate'): # Check if method exists on app
-             self.app.setPlaybackRate(rate) # Call the app's method
+        if hasattr(self.app, "setPlaybackRate"):  # Check if method exists on app
+            self.app.setPlaybackRate(rate)  # Call the app's method
         else:
-             print("ShortcutManager: Error - self.app has no setPlaybackRate method.")
+            print("ShortcutManager: Error - self.app has no setPlaybackRate method.")
 
     def adjustPlaybackRate(self, delta):
         """Tell the main app to adjust the playback rate."""
-        if hasattr(self.app, 'changePlaybackRate'): # Check if method exists on app
+        if hasattr(self.app, "changePlaybackRate"):  # Check if method exists on app
             # Note: We call changePlaybackRate which handles getting current rate
             self.app.changePlaybackRate(delta)
         else:
@@ -118,10 +119,10 @@ class ShortcutManager:
     # Keep skipTime method, but make it call app's seek method
     def skipTime(self, ms):
         """Tell the main app to skip time."""
-        if hasattr(self.app, 'qml_root_main') and self.app.qml_root_main:
-            current = self.app.media_player['_position'] # Use tracked position
-            duration = self.app.media_player['_duration'] # Use tracked duration
-            target_pos = max(0, min(current + ms, duration if duration > 0 else current + ms)) # Basic clamping
+        if hasattr(self.app, "qml_root_main") and self.app.qml_root_main:
+            current = self.app.media_player["_position"]  # Use tracked position
+            duration = self.app.media_player["_duration"]  # Use tracked duration
+            target_pos = max(0, min(current + ms, duration if duration > 0 else current + ms))  # Basic clamping
             print(f"ShortcutManager: Seeking main player to {target_pos}")
             self.app.qml_root_main.seek(target_pos)
             # Also sync preview immediately after shortcut seek
@@ -131,8 +132,8 @@ class ShortcutManager:
 
     # adjustPreviewSkip might need similar adaptation if PREVIEW_OFFSET is dynamic
     def adjustPreviewSkip(self, seconds_delta):
-         # This requires PREVIEW_OFFSET to be adjustable in VideoPlayerApp
-         if hasattr(self.app, 'adjustPreviewOffset'):
-             self.app.adjustPreviewOffset(seconds_delta * 1000) # Convert s to ms
-         else:
-             print("ShortcutManager: self.app has no adjustPreviewOffset method.")
+        # This requires PREVIEW_OFFSET to be adjustable in VideoPlayerApp
+        if hasattr(self.app, "adjustPreviewOffset"):
+            self.app.adjustPreviewOffset(seconds_delta * 1000)  # Convert s to ms
+        else:
+            print("ShortcutManager: self.app has no adjustPreviewOffset method.")

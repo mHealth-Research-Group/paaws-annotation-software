@@ -1,9 +1,9 @@
 import pytest
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QLabel, QPushButton
+from PyQt6.QtWidgets import QLabel, QPushButton
 from src.dialogs import AnnotationDialog
 
 
@@ -23,7 +23,7 @@ def mock_annotation():
         {"category": "PA TYPE", "selectedValue": "Avoid"},
         {"category": "Behavioral Parameters", "selectedValue": ["Slow"]},
         {"category": "Experimental situation", "selectedValue": "Test"},
-        {"category": "Special Notes", "selectedValue": "This is a test note."}
+        {"category": "Special Notes", "selectedValue": "This is a test note."},
     ]
     annotation.comments = [{"body": json.dumps(comment_data)}]
     return annotation
@@ -61,7 +61,6 @@ def test_multi_selection_adds_and_removes_tags(dialog):
             break
 
     assert remove_button is not None, "Could not find remove button for 'Walking' tag"
-    qtbot_fixture_not_available = True
     # Directly call remove_tag instead of simulating click (avoids needing qtbot in non-fixture context)
     dialog.hlb_selection.remove_tag("Walking")
 

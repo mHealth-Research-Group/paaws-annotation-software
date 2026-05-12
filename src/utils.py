@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 from src.models import TimelineAnnotation
 import sys
-from pathlib import Path
+
 
 class SessionTracker:
     def __init__(self):
@@ -28,6 +28,22 @@ class SessionTracker:
     def is_started(self):
         return self._session_start is not None
 
+    @staticmethod
+    def _parse_comment_datetime(dt_str):
+        if not dt_str:
+            return None
+
+        try:
+            return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    @staticmethod
+    def _datetime_for_comparison(dt):
+        if dt.tzinfo is None or dt.utcoffset() is None:
+            return dt
+        return dt.astimezone().replace(tzinfo=None)
+
     def build_session_data(self, annotations, user_id, user_name):
         if not self.is_started:
             return None
@@ -40,35 +56,39 @@ class SessionTracker:
         first_video_pos = None
         last_wall_clock = None
         last_video_pos = None
-        total_annotations = len(annotations)
 
-        # Derive first/last annotation by creation datetime from comments meta
+        # Session logging only tracks annotations created during this session.
         dated_annotations = []
         for ann in annotations:
             if ann.comments:
                 meta = ann.comments[0].get("meta", {})
                 dt_str = meta.get("datetime")
-                if dt_str:
-                    try:
-                        dt = datetime.fromisoformat(dt_str)
-                        dated_annotations.append((dt, ann))
-                    except (ValueError, TypeError):
-                        pass
+                dt = self._parse_comment_datetime(dt_str)
+                if dt is None:
+                    continue
+
+                comparison_dt = self._datetime_for_comparison(dt)
+                if self._session_start <= comparison_dt <= now:
+                    dated_annotations.append((comparison_dt, dt, ann))
+
+        total_annotations = len(dated_annotations)
 
         if dated_annotations:
             dated_annotations.sort(key=lambda x: x[0])
-            first_dt, first_ann = dated_annotations[0]
-            last_dt, last_ann = dated_annotations[-1]
+            _, first_dt, first_ann = dated_annotations[0]
+            _, last_dt, last_ann = dated_annotations[-1]
             first_wall_clock = first_dt.isoformat()
             first_video_pos = first_ann.start_time
             last_wall_clock = last_dt.isoformat()
             last_video_pos = last_ann.start_time
 
         # Footage covered: span from earliest start_time to latest end_time
+        # among annotations created during this session.
         footage_covered = 0.0
-        if annotations:
-            earliest_start = min(a.start_time for a in annotations)
-            latest_end = max(a.end_time for a in annotations)
+        session_annotations = [ann for _, _, ann in dated_annotations]
+        if session_annotations:
+            earliest_start = min(a.start_time for a in session_annotations)
+            latest_end = max(a.end_time for a in session_annotations)
             footage_covered = latest_end - earliest_start
 
         data = {
@@ -96,7 +116,7 @@ class AutosaveManager:
     def __init__(self, interval: int = 300000) -> None:
         """Initialize autosave manager"""
         self.interval = interval
-        self.autosave_dir = os.path.join(tempfile.gettempdir(), 'paaws_annotation_software_autosave')
+        self.autosave_dir = os.path.join(tempfile.gettempdir(), "paaws_annotation_software_autosave")
         os.makedirs(self.autosave_dir, exist_ok=True)
 
     def calculate_video_hash(self, file_path: str) -> int:
@@ -109,7 +129,7 @@ class AutosaveManager:
                 video_hash = ((video_hash << 5) - video_hash + ord(char)) & 0xFFFFFFFF  # force 32-bit
             if video_hash & 0x80000000:
                 video_hash = -((~video_hash & 0xFFFFFFFF) + 1)
-            
+
             return video_hash
         except Exception as e:
             print(f"Error calculating video hash: {str(e)}")
@@ -119,7 +139,7 @@ class AutosaveManager:
         """Delete autosave file for the given video"""
         if not video_path:
             return
-            
+
         try:
             video_name = Path(video_path).stem
             autosave_path = os.path.join(self.autosave_dir, f"{video_name}_autosave.json")
@@ -133,33 +153,28 @@ class AutosaveManager:
         print(f"Autosaving annotations for {video_path}...")
         if not video_path:
             return
-            
+
         try:
             video_name = Path(video_path).stem
             autosave_path = os.path.join(self.autosave_dir, f"{video_name}_autosave.json")
-            
-            annotations_data = {
-                "annotations": [],
-                "videoHash": video_hash,
-                "video_path": video_path
-            }
-            
+
+            annotations_data = {"annotations": [], "videoHash": video_hash, "video_path": video_path}
+
             for annotation in annotations:
-                annotations_data["annotations"].append({
-                    "id": annotation.id,
-                    "range": {
-                        "start": annotation.start_time,
-                        "end": annotation.end_time
-                    },
-                    "shape": annotation.shape,
-                    "comments": annotation.comments
-                })
-                
-            with open(autosave_path, 'w') as f:
+                annotations_data["annotations"].append(
+                    {
+                        "id": annotation.id,
+                        "range": {"start": annotation.start_time, "end": annotation.end_time},
+                        "shape": annotation.shape,
+                        "comments": annotation.comments,
+                    }
+                )
+
+            with open(autosave_path, "w") as f:
                 json.dump(annotations_data, f, indent=4)
         except Exception as e:
             print(f"Autosave failed: {str(e)}")
-            
+
     def check_for_autosave(self, video_path: str, current_hash: int) -> Tuple[Optional[dict], bool]:
         """
         Check for and load autosave file
@@ -169,32 +184,34 @@ class AutosaveManager:
         """
         if not video_path:
             return None, False
-            
+
         video_name = Path(video_path).stem
         autosave_path = os.path.join(self.autosave_dir, f"{video_name}_autosave.json")
-        
+
         if os.path.exists(autosave_path):
             try:
-                with open(autosave_path, 'r') as f:
+                with open(autosave_path, "r") as f:
                     data = json.load(f)
                 if data.get("video_path") == video_path:
                     saved_hash = data.get("videoHash", data.get("videohash", 0))
                     return data, saved_hash == current_hash
             except Exception as e:
                 print(f"Failed to load autosave: {str(e)}")
-        
+
         return None, False
-    
+
+
 def autosave(func):
     """
     Decorator to handle autosaving
     """
+
     def wrapper(self, *args, **kwargs):
         # Call the original function
         func(self, *args, **kwargs)
-        
+
         # Save annotations after the function call
-        if hasattr(self, 'app') and hasattr(self.app, 'autosave_manager'):
+        if hasattr(self, "app") and hasattr(self.app, "autosave_manager"):
             # Call the autosave method in the app
             self.app.autosave()
 
@@ -203,7 +220,7 @@ def autosave(func):
 
 def resource_path(relative_path: str) -> str:
     try:
-        base_path = getattr(sys, '_MEIPASS', None)
+        base_path = getattr(sys, "_MEIPASS", None)
     except Exception:
         base_path = None
 
