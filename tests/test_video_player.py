@@ -1,12 +1,13 @@
-import pytest
 import json
-from zipfile import ZipFile
+from importlib.metadata import version
 from unittest.mock import MagicMock
+from zipfile import ZipFile
 
+import pytest
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QWidget
+
 from src.video_player import VideoPlayerApp
-from importlib.metadata import version
 
 __version__ = version("paaws-annotation-software")
 

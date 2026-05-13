@@ -20,5 +20,8 @@ test = [
     "pytest-qt>=4.2.0",
 ]
 
+[tool.pyright]
+extraPaths = ["."]
+
 [tool.ruff]
 line-length = 120

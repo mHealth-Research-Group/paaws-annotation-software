@@ -1,7 +1,8 @@
-from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QPointF, QRectF
-from PyQt6.QtGui import QPainter, QPen, QColor, QLinearGradient
 import json
+
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
+from PyQt6.QtWidgets import QWidget
 
 
 class TimelineWidget(QWidget):

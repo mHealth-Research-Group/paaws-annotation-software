@@ -1,9 +1,10 @@
-import pytest
 import json
 from unittest.mock import MagicMock
 
-from PyQt6.QtCore import Qt, QPoint
+import pytest
+from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtWidgets import QWidget
+
 from src.widgets import TimelineWidget
 
 _mock_annotation_counter = 0

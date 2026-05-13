@@ -1,28 +1,29 @@
-import json
 import csv
+import json
 import uuid
 from collections import defaultdict
 
+from PyQt6.QtCore import QPoint, QRect, QSettings, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QDialog,
-    QVBoxLayout,
+    QDialogButtonBox,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QPushButton,
-    QWidget,
-    QDialogButtonBox,
-    QGridLayout,
-    QFrame,
-    QScrollArea,
     QLayout,
+    QLineEdit,
     QMessageBox,
-    QCheckBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QRect, QPoint, QTimer, QSettings
-from PyQt6.QtGui import QKeyEvent
+
+from src.custom_combo import MultiSelectComboBox, SearchableComboBox
 from src.utils import resource_path
-from src.custom_combo import SearchableComboBox, MultiSelectComboBox
 
 # Constants
 APP_NAME = "PAAWS-Annotation-Software"

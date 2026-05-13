@@ -1,9 +1,10 @@
-import pytest
 import json
 from unittest.mock import MagicMock
 
+import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QPushButton
+
 from src.dialogs import AnnotationDialog
 
 

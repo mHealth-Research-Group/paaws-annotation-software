@@ -1,7 +1,8 @@
 # main.py
 
-import sys
 import os
+import sys
+
 from PyQt6.QtWidgets import QApplication
 
 # Ensure the 'src' directory is in the Python path

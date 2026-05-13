@@ -1,11 +1,12 @@
 import json
 import os
-from pathlib import Path
+import sys
 import tempfile
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Tuple
+
 from src.models import TimelineAnnotation
-import sys
 
 
 class SessionTracker:

@@ -1,34 +1,36 @@
 # --- Imports ---
-import json
-import io
 import csv
-from zipfile import ZipFile
+import io
+import json
 import os
 import sys
+from importlib.metadata import version
+from zipfile import ZipFile
+
+from PyQt6.QtCore import Qt, QTime, QTimer, QUrl
+from PyQt6.QtGui import QAction, QGuiApplication, QPalette
+from PyQt6.QtQuickWidgets import QQuickWidget
 
 # PyQt6 imports
 from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
-    QMessageBox,
+    QMainWindow,
     QMenu,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QUrl, QTime, QTimer
-from PyQt6.QtGui import QAction, QPalette, QGuiApplication
-from PyQt6.QtQuickWidgets import QQuickWidget
-from src.slider import CustomSlider
-from src.models import TimelineAnnotation
-from src.widgets import TimelineWidget
-from src.dialogs import AnnotatorSettings, prompt_annotator_name
-from src.shortcuts import ShortcutManager
+
 from src.annotation_manager import AnnotationManager
+from src.dialogs import AnnotatorSettings, prompt_annotator_name
+from src.models import TimelineAnnotation
+from src.shortcuts import ShortcutManager
+from src.slider import CustomSlider
 from src.utils import AutosaveManager, SessionTracker
-from importlib.metadata import version
+from src.widgets import TimelineWidget
 
 __version__ = version("paaws-annotation-software")
 

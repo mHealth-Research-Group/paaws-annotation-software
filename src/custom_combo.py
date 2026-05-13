@@ -1,8 +1,6 @@
-from PyQt6.QtWidgets import QComboBox, QCompleter, QAbstractItemView
-from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QSortFilterProxyModel
-from PyQt6.QtGui import QStandardItemModel, QStandardItem
-from PyQt6.QtWidgets import QStyledItemDelegate
-from PyQt6.QtCore import QRect
+from PyQt6.QtCore import QEvent, QRect, QSortFilterProxyModel, Qt, pyqtSignal
+from PyQt6.QtGui import QStandardItem, QStandardItemModel
+from PyQt6.QtWidgets import QAbstractItemView, QComboBox, QCompleter, QStyledItemDelegate
 
 
 class SearchableComboBox(QComboBox):
@@ -225,13 +223,11 @@ class MultiSelectComboBox(SearchableComboBox):
                 if index.isValid():
                     self._toggle_item_at_index(index)
                     return True
-        elif obj == self.view():
-            if event.type() == QEvent.Type.KeyPress:
-                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                    index = self.view().currentIndex()
-                    if index.isValid():
-                        self._toggle_item_at_index(index)
-                        return True
+        elif obj == self.view() and event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            index = self.view().currentIndex()
+            if index.isValid():
+                self._toggle_item_at_index(index)
+                return True
         return super().eventFilter(obj, event)
 
     def _on_item_activated(self, text):
@@ -322,12 +318,7 @@ class MultiSelectComboBox(SearchableComboBox):
             self.clearFocus()
             event.accept()
             return
-        elif event.key() == Qt.Key.Key_Down:
-            if not self.view().isVisible():
-                self.showPopup()
-                event.accept()
-                return
-        elif event.key() == Qt.Key.Key_Up:
+        elif event.key() == Qt.Key.Key_Down or event.key() == Qt.Key.Key_Up:
             if not self.view().isVisible():
                 self.showPopup()
                 event.accept()

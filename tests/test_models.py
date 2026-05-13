@@ -1,6 +1,7 @@
 """Tests for models module."""
 
 import json
+
 from src.models import TimelineAnnotation
 
 

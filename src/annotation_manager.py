@@ -1,8 +1,10 @@
+import json
+import random
+
 from PyQt6.QtWidgets import QMessageBox
+
 from src.dialogs import AnnotationDialog
 from src.models import TimelineAnnotation
-import random
-import json
 from src.utils import autosave
 
 

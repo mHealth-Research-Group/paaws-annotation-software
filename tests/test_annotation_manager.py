@@ -1,6 +1,8 @@
-import pytest
 import json
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from src.annotation_manager import AnnotationManager
 from src.models import TimelineAnnotation
 
