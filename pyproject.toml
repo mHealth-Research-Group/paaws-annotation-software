@@ -1,0 +1,27 @@
+[project]
+name = "paaws-annotation-software"
+version = "0.28.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyqt6>=6.4.0",
+    "pyqt6-qt6>=6.4.0",
+    "pyqt6-sip>=13.4.0",
+]
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-qt>=4.2.0",
+]
+
+[tool.pyright]
+extraPaths = ["."]
+
+[tool.ruff]
+line-length = 120

@@ -1,9 +1,11 @@
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMainWindow
+
 from src.shortcuts import ShortcutManager
+
 
 class MockApp(QMainWindow):
     def __init__(self):
@@ -27,10 +29,7 @@ class MockApp(QMainWindow):
         self._sync_preview_qml_position = MagicMock()
         self.qml_root_main = MagicMock()
         self.qml_root_main.seek = MagicMock()
-        self.media_player = {
-            '_position': 10000,
-            '_duration': 60000
-        }
+        self.media_player = {"_position": 10000, "_duration": 60000}
 
 
 @pytest.fixture
@@ -40,9 +39,11 @@ def mock_app(qtbot):
     qtbot.addWidget(app)
     return app
 
+
 @pytest.fixture
 def manager(mock_app):
     return ShortcutManager(mock_app)
+
 
 def test_initialization(manager, mock_app):
     assert manager.app == mock_app
@@ -50,9 +51,11 @@ def test_initialization(manager, mock_app):
     assert manager.start_label is not None
     assert manager.skip_forward is not None
 
+
 def test_play_pause_shortcut(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Space)
     mock_app.togglePlayPause.assert_called_once()
+
 
 def test_playback_rate_shortcuts(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Up)
@@ -63,8 +66,9 @@ def test_playback_rate_shortcuts(manager, mock_app, qtbot):
     mock_app.changePlaybackRate.assert_called_once_with(-0.25)
     mock_app.changePlaybackRate.reset_mock()
 
-    qtbot.keyClick(mock_app, 'r')
+    qtbot.keyClick(mock_app, "r")
     mock_app.setPlaybackRate.assert_called_once_with(1.0)
+
 
 def test_time_skip_shortcuts(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Right)
@@ -74,15 +78,17 @@ def test_time_skip_shortcuts(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Left)
     mock_app.qml_root_main.seek.assert_called_once_with(0)
 
+
 def test_annotation_action_shortcuts(manager, mock_app, qtbot):
-    qtbot.keyClick(mock_app, 'a')
+    qtbot.keyClick(mock_app, "a")
     mock_app.toggleAnnotation.assert_called_once()
 
-    qtbot.keyClick(mock_app, 'z')
+    qtbot.keyClick(mock_app, "z")
     mock_app.cancelAnnotation.assert_called_once()
 
-    qtbot.keyClick(mock_app, 's')
+    qtbot.keyClick(mock_app, "s")
     mock_app.deleteCurrentLabel.assert_called_once()
+
 
 def test_annotation_navigation_shortcuts(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier)
@@ -91,19 +97,22 @@ def test_annotation_navigation_shortcuts(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier)
     mock_app.moveToNextLabel.assert_called_once()
 
+
 def test_annotation_merge_shortcuts(manager, mock_app, qtbot):
-    qtbot.keyClick(mock_app, 'm')
+    qtbot.keyClick(mock_app, "m")
     mock_app.mergeWithNext.assert_called_once()
 
-    qtbot.keyClick(mock_app, 'n')
+    qtbot.keyClick(mock_app, "n")
     mock_app.mergeWithPrevious.assert_called_once()
 
+
 def test_split_and_edit_shortcuts(manager, mock_app, qtbot):
-    qtbot.keyClick(mock_app, 'p')
+    qtbot.keyClick(mock_app, "p")
     mock_app.splitCurrentLabel.assert_called_once()
 
-    qtbot.keyClick(mock_app, 'g')
+    qtbot.keyClick(mock_app, "g")
     mock_app.editAnnotation.assert_called_once()
+
 
 def test_preview_offset_shortcuts(manager, mock_app, qtbot):
     qtbot.keyClick(mock_app, Qt.Key.Key_Up, Qt.KeyboardModifier.ShiftModifier)
