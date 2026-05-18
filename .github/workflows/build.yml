@@ -15,13 +15,15 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-windows:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release_tag || github.ref }}
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -80,17 +82,13 @@ jobs:
       with:
         name: windows-exe
         path: dist/PAAWS-Annotation-Software-windows.exe
-    - name: Attach to release
-      if: github.event_name == 'release' || inputs.release_tag != ''
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.event.release.tag_name || inputs.release_tag }}
-        files: dist/PAAWS-Annotation-Software-windows.exe
 
   build-macos-arm:
     runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release_tag || github.ref }}
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -154,17 +152,13 @@ jobs:
       with:
         name: macos-arm-dmg
         path: dist/PAAWS-Annotation-Software-mac.dmg
-    - name: Attach to release
-      if: github.event_name == 'release' || inputs.release_tag != ''
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.event.release.tag_name || inputs.release_tag }}
-        files: dist/PAAWS-Annotation-Software-mac.dmg
 
   build-linux:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release_tag || github.ref }}
     # Install only base GStreamer libs, assuming bundled Qt plugin is sufficient
     - name: Install Base Multimedia System Dependencies
       run: |
@@ -231,9 +225,23 @@ jobs:
       with:
         name: linux-bin
         path: dist/PAAWS-Annotation-Software-linux
+
+  release-upload:
+    needs: [build-windows, build-macos-arm, build-linux]
+    if: github.event_name == 'release' || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download all build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     - name: Attach to release
-      if: github.event_name == 'release' || inputs.release_tag != ''
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.event.release.tag_name || inputs.release_tag }}
-        files: dist/PAAWS-Annotation-Software-linux
+        files: |
+          artifacts/windows-exe/PAAWS-Annotation-Software-windows.exe
+          artifacts/macos-arm-dmg/PAAWS-Annotation-Software-mac.dmg
+          artifacts/linux-bin/PAAWS-Annotation-Software-linux
