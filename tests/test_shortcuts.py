@@ -23,6 +23,7 @@ class MockApp(QMainWindow):
         self.mergeWithNext = MagicMock()
         self.splitCurrentLabel = MagicMock()
         self.editAnnotation = MagicMock()
+        self.toggleShortcutsWidget = MagicMock()
         self.setPlaybackRate = MagicMock()
         self.changePlaybackRate = MagicMock()
         self.adjustPreviewOffset = MagicMock()
@@ -112,6 +113,11 @@ def test_split_and_edit_shortcuts(manager, mock_app, qtbot):
 
     qtbot.keyClick(mock_app, "g")
     mock_app.editAnnotation.assert_called_once()
+
+
+def test_toggle_shortcuts_panel_shortcut(manager, mock_app, qtbot):
+    qtbot.keyClick(mock_app, "h")
+    mock_app.toggleShortcutsWidget.assert_called_once()
 
 
 def test_preview_offset_shortcuts(manager, mock_app, qtbot):

@@ -7,7 +7,7 @@ import sys
 from importlib.metadata import version
 from zipfile import ZipFile
 
-from PyQt6.QtCore import Qt, QTime, QTimer, QUrl
+from PyQt6.QtCore import QSettings, Qt, QTime, QTimer, QUrl
 from PyQt6.QtGui import QAction, QGuiApplication, QPalette
 from PyQt6.QtQuickWidgets import QQuickWidget
 
@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.annotation_manager import AnnotationManager
-from src.dialogs import AnnotatorSettings, prompt_annotator_name
+from src.dialogs import APP_NAME, ORGANIZATION_NAME, AnnotatorSettings, prompt_annotator_name
 from src.models import TimelineAnnotation
 from src.shortcuts import ShortcutManager
 from src.slider import CustomSlider
@@ -39,6 +39,8 @@ class VideoPlayerApp(QMainWindow):
     SYNC_THRESHOLD = 150
     MIN_ZOOM_DURATION = 600000  # 10 minutes in ms
     BASE_PREVIEW_OFFSET = 2000  # 2 seconds in ms
+    SETTINGS_SHOW_SHORTCUTS = "ui/show_shortcuts"
+    SMALL_SCREEN_HEIGHT = 900  # below this (logical px), the shortcuts panel starts hidden
 
     def __init__(self):
         super().__init__()
@@ -128,10 +130,11 @@ class VideoPlayerApp(QMainWindow):
         layout = QVBoxLayout(central_widget)
 
         video_container = QWidget()
+        video_container.setObjectName("videoContainer")
         video_container.setStyleSheet(
-            "QWidget { background-color: #1a1a1a; border: 2px solid #3a3a3a; border-radius: 8px; margin: 10px; }"
+            "QWidget#videoContainer { background-color: #1a1a1a; border: 2px solid #3a3a3a; border-radius: 8px; }"
         )
-        video_container.setMinimumHeight(400)
+        video_container.setMinimumHeight(240)
         video_container_layout = QHBoxLayout(video_container)
         video_container_layout.setContentsMargins(10, 10, 10, 10)
         video_container_layout.setSpacing(10)
@@ -171,6 +174,9 @@ class VideoPlayerApp(QMainWindow):
         video_container_layout.addWidget(right_video_container)
         layout.addWidget(video_container, stretch=2)
         print("--- setupUI: QQuickWidgets added to layout.")
+
+        # Controls sit right under the video so they stay on-screen when the window is short
+        layout.addWidget(self._create_controls())
 
         print("--- setupUI: Setting up timelines...")
         timelines_container = QWidget()
@@ -239,13 +245,12 @@ class VideoPlayerApp(QMainWindow):
 
         print("--- setupUI: Setting up shortcuts display...")
         self.shortcuts_container = QWidget()
+        self.shortcuts_container.setObjectName("shortcutsContainer")
         self.shortcuts_container.setStyleSheet("""
-            QWidget {
+            QWidget#shortcutsContainer {
                 background-color: #1a1a1a;
                 border: 1px solid #3a3a3a;
                 border-radius: 8px;
-                padding: 15px;
-                margin: 8px;
             }
             QLabel {
                 color: #ffffff;
@@ -273,19 +278,24 @@ class VideoPlayerApp(QMainWindow):
             QWidget[isColumn="true"] {
                 background-color: #222222;
                 border-radius: 6px;
-                padding: 10px;
-                margin: 5px;
             }
         """)
         shortcuts_layout = QHBoxLayout(self.shortcuts_container)
-        shortcuts_layout.setSpacing(15)
+        shortcuts_layout.setSpacing(10)
+        shortcuts_layout.setContentsMargins(8, 8, 8, 8)
         self._populate_shortcuts(shortcuts_layout)
         layout.addWidget(self.shortcuts_container, stretch=0)
 
+        self._setup_settings_menu()
+        self.setShortcutsVisible(self._initial_shortcuts_visibility())
+        print("--- setupUI: Finished.")
+
+    def _create_controls(self):
         print("--- setupUI: Setting up controls...")
         controls_container = QWidget()
+        controls_container.setObjectName("controlsContainer")
         controls_container.setStyleSheet("""
-            QWidget { background-color: #1a1a1a; border: 1px solid #3a3a3a; border-radius: 6px; margin: 8px; }
+            QWidget#controlsContainer { background-color: #1a1a1a; border: 1px solid #3a3a3a; border-radius: 6px; }
             QPushButton { padding: 8px 16px; background-color: #4a90e2; color: white; border: none; border-radius: 4px; min-width: 100px; }
             QPushButton:hover { background-color: #357abd; } QPushButton:pressed { background-color: #2a5f9e; }
             QPushButton:disabled { background-color: #555; color: #999; }
@@ -350,13 +360,12 @@ class VideoPlayerApp(QMainWindow):
         controls_layout.addWidget(left_controls)
         controls_layout.addStretch()
         controls_layout.addWidget(right_controls)
-        layout.addWidget(controls_container)
-
-        print("--- setupUI: Connecting UI signals...")
 
         self.play_pause_button.clicked.connect(self.togglePlayPause)
         self.open_button.clicked.connect(self.openFile)
+        return controls_container
 
+    def _setup_settings_menu(self):
         self.settings_menu = QMenu(self)
         self.settings_menu.setStyleSheet(
             "QMenu { background-color: #2b2b2b; border: 1px solid #3a3a3a; } QMenu::item { padding: 8px 20px; color: white; } QMenu::item:selected { background-color: #4a90e2; }"
@@ -370,7 +379,7 @@ class VideoPlayerApp(QMainWindow):
         self.rotate_action = QAction("Rotate Video", self)
         self.rotate_action.setEnabled(False)
         self.rotate_action.triggered.connect(self.rotateVideo)
-        self.toggle_shortcuts_action = QAction("Hide Shortcuts", self)
+        self.toggle_shortcuts_action = QAction("Hide Shortcuts (H)", self)
         self.toggle_shortcuts_action.triggered.connect(self.toggleShortcutsWidget)
         self.settings_menu.addAction(load_action)
         self.settings_menu.addAction(export_action)
@@ -384,7 +393,6 @@ class VideoPlayerApp(QMainWindow):
         change_annotator_action.triggered.connect(self._change_annotator_name)
         self.settings_menu.addAction(change_annotator_action)
         self.gear_button.setMenu(self.settings_menu)
-        print("--- setupUI: Finished.")
 
     def _populate_shortcuts(self, parent_layout):
         """Helper to create the shortcut display columns."""
@@ -408,6 +416,7 @@ class VideoPlayerApp(QMainWindow):
                 "N - Merge with previous",
                 "M - Merge with next",
                 "Shift+↑/↓ - Adjust preview skip",
+                "H - Show/hide this panel",
             ],
             "📝 Dialog Controls": [
                 "1 - Select Posture",
@@ -1160,12 +1169,24 @@ class VideoPlayerApp(QMainWindow):
         self.qml_root_main.setProperty("orientation", self.current_rotation)
         self.qml_root_preview.setProperty("orientation", self.current_rotation)
 
+    def _initial_shortcuts_visibility(self):
+        """Use the saved preference; on first launch, hide the panel on short screens."""
+        saved = QSettings(ORGANIZATION_NAME, APP_NAME).value(self.SETTINGS_SHOW_SHORTCUTS)
+        if saved is not None:
+            return str(saved).lower() == "true"
+        screen = QGuiApplication.primaryScreen()
+        return screen is None or screen.availableGeometry().height() >= self.SMALL_SCREEN_HEIGHT
+
+    def setShortcutsVisible(self, visible):
+        self.shortcuts_container.setVisible(visible)
+        self.toggle_shortcuts_action.setText("Hide Shortcuts (H)" if visible else "Show Shortcuts (H)")
+
     def toggleShortcutsWidget(self):
         print("--- toggleShortcutsWidget called ---")
         if hasattr(self, "shortcuts_container"):
-            visible = self.shortcuts_container.isVisible()
-            self.shortcuts_container.setVisible(not visible)
-            self.toggle_shortcuts_action.setText("Show Shortcuts" if visible else "Hide Shortcuts")
+            visible = not self.shortcuts_container.isVisibleTo(self)
+            self.setShortcutsVisible(visible)
+            QSettings(ORGANIZATION_NAME, APP_NAME).setValue(self.SETTINGS_SHOW_SHORTCUTS, visible)
 
     def loadAnnotations(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Load Annotations", "", "JSON Files (*.json)")

@@ -101,6 +101,12 @@ class ShortcutManager:
         self.toggle_dialog.triggered.connect(self.app.editAnnotation)
         self.app.addAction(self.toggle_dialog)
 
+        # Shortcuts panel
+        self.toggle_shortcuts = QAction("Show/Hide Shortcuts", self.app)
+        self.toggle_shortcuts.setShortcut("h")
+        self.toggle_shortcuts.triggered.connect(self.app.toggleShortcutsWidget)
+        self.app.addAction(self.toggle_shortcuts)
+
     def setPlaybackRate(self, rate):
         """Tell the main app to set the playback rate."""
         if hasattr(self.app, "setPlaybackRate"):  # Check if method exists on app

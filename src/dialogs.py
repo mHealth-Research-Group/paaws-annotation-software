@@ -371,8 +371,7 @@ class AnnotationDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Category Choices")
         self.setModal(True)
-        self.setMinimumWidth(1200)
-        self.setMinimumHeight(800)
+        self.setMinimumSize(640, 400)
 
         self.is_editing = is_editing
         self.settings = QSettings(ORGANIZATION_NAME, APP_NAME)
@@ -387,6 +386,7 @@ class AnnotationDialog(QDialog):
         initial_data = self._get_initial_data(annotation)
         if initial_data:
             self._set_values_from_data(initial_data)
+        self._fit_to_screen()
 
         self.disable_alerts_checkbox.stateChanged.connect(self._on_settings_change)
 
@@ -418,10 +418,10 @@ class AnnotationDialog(QDialog):
 
         grid = QGridLayout()
         grid.setSpacing(16)
-        # Fixed column widths to prevent resizing
-        grid.setColumnMinimumWidth(0, 220)  # Category column
-        grid.setColumnMinimumWidth(1, 350)  # Choices column
-        grid.setColumnMinimumWidth(2, 300)  # Active labels column
+        # Minimum column widths stay small so the dialog fits on low-resolution / high-DPI screens
+        grid.setColumnMinimumWidth(0, 160)  # Category column
+        grid.setColumnMinimumWidth(1, 240)  # Choices column
+        grid.setColumnMinimumWidth(2, 160)  # Active labels column
         # Set stretch factors - only category column should not stretch
         grid.setColumnStretch(0, 0)  # Category - fixed width
         grid.setColumnStretch(1, 2)  # Choices - can stretch
@@ -447,7 +447,7 @@ class AnnotationDialog(QDialog):
         # Set size policies for active labels to prevent excessive expansion
         for label in [self.posture_active, self.hlb_active, self.pa_active, self.bp_active, self.es_active]:
             label.setWordWrap(True)
-            label.setMinimumWidth(250)
+            label.setMinimumWidth(160)
 
         self.posture_selection = SelectionWidget(self.posture_combo, self.posture_active, multi_select=False)
         self.hlb_selection = SelectionWidget(self.hlb_combo, self.hlb_active, multi_select=True)
@@ -493,11 +493,16 @@ class AnnotationDialog(QDialog):
         notes_layout.addWidget(self.notes_edit)
         main_layout.addWidget(notes_container)
 
+        main_scroll.setWidget(main_widget)
+
+        # Buttons live outside the scroll area so they stay visible however short the dialog is
         button_container = QWidget()
+        button_container.setStyleSheet(self._get_stylesheet())
         button_layout = QHBoxLayout(button_container)
         button_layout.setSpacing(10)
+        button_layout.setContentsMargins(24, 12, 24, 12)
         self.button_box = QDialogButtonBox()
-        self.ok_button = QPushButton("SAVE CHANGES" if self.is_editing else "Save")
+        self.ok_button = QPushButton("Save changes")
         self.cancel_button = QPushButton("Cancel")
         self.button_box.addButton(self.ok_button, QDialogButtonBox.ButtonRole.AcceptRole)
         self.button_box.addButton(self.cancel_button, QDialogButtonBox.ButtonRole.RejectRole)
@@ -505,15 +510,28 @@ class AnnotationDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         button_layout.addStretch()
         button_layout.addWidget(self.button_box)
-        main_layout.addWidget(button_container)
 
         if not self.is_editing:
             button_container.hide()
 
-        main_scroll.setWidget(main_widget)
         dialog_layout = QVBoxLayout(self)
         dialog_layout.setContentsMargins(0, 0, 0, 0)
-        dialog_layout.addWidget(main_scroll)
+        dialog_layout.setSpacing(0)
+        dialog_layout.addWidget(main_scroll, stretch=1)
+        dialog_layout.addWidget(button_container)
+        self._main_widget = main_widget
+
+    def _fit_to_screen(self):
+        """Size the dialog to its contents, capped to 90% of the available screen area."""
+        screen = self.screen() or (self.parent().screen() if self.parent() else None)
+        if screen is None:
+            self.resize(1200, 800)
+            return
+        available = screen.availableGeometry()
+        content = self._main_widget.sizeHint()
+        width = min(max(content.width() + 40, 1200), int(available.width() * 0.9))
+        height = min(content.height() + 80, int(available.height() * 0.9))
+        self.resize(max(width, self.minimumWidth()), max(height, self.minimumHeight()))
 
     def _get_initial_data(self, annotation):
         if annotation and hasattr(annotation, "comments") and annotation.comments:

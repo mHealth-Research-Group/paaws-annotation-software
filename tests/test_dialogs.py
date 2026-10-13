@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QPushButton
+from PyQt6.QtWidgets import QLabel, QPushButton, QScrollArea
 
 from src.dialogs import AnnotationDialog
 
@@ -86,3 +86,16 @@ def test_keyboard_shortcuts_focus_combos(qtbot, dialog):
     dialog.posture_combo.hidePopup()
     qtbot.keyPress(dialog, Qt.Key.Key_2)
     dialog.hlb_combo.hidePopup()
+
+
+def test_save_button_stays_visible_on_short_dialog(qtbot, dialog):
+    # Buttons must sit outside the scroll area so they are reachable on small screens (issue #39)
+    scroll = dialog.findChild(QScrollArea)
+    assert not scroll.isAncestorOf(dialog.ok_button)
+
+    dialog.resize(800, 450)
+    dialog.show()
+    qtbot.waitExposed(dialog)
+    bottom_right = dialog.ok_button.mapTo(dialog, dialog.ok_button.rect().bottomRight())
+    assert bottom_right.y() <= dialog.height()
+    assert dialog.minimumHeight() <= 450
