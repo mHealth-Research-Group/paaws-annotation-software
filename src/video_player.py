@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -135,6 +137,8 @@ class VideoPlayerApp(QMainWindow):
             "QWidget#videoContainer { background-color: #1a1a1a; border: 2px solid #3a3a3a; border-radius: 8px; }"
         )
         video_container.setMinimumHeight(240)
+        # Ignored: the video takes whatever height is left, and is the first thing to shrink
+        video_container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Ignored)
         video_container_layout = QHBoxLayout(video_container)
         video_container_layout.setContentsMargins(10, 10, 10, 10)
         video_container_layout.setSpacing(10)
@@ -255,7 +259,7 @@ class VideoPlayerApp(QMainWindow):
             QLabel {
                 color: #ffffff;
                 font-size: 13px;
-                padding: 4px 8px;
+                padding: 3px 8px;
                 selection-background-color: transparent;
                 selection-color: #ffffff;
             }
@@ -263,14 +267,13 @@ class VideoPlayerApp(QMainWindow):
                 color: #4a90e2;
                 font-size: 14px;
                 font-weight: bold;
-                padding: 8px;
-                margin-bottom: 8px;
+                padding: 4px 8px;
+                margin-bottom: 4px;
                 border-bottom: 2px solid #4a90e2;
             }
             QLabel[isShortcut="true"] {
                 background-color: #2a2a2a;
                 border-radius: 4px;
-                margin: 2px 0px;
             }
             QLabel[isShortcut="true"]:hover {
                 background-color: #353535;
@@ -284,7 +287,17 @@ class VideoPlayerApp(QMainWindow):
         shortcuts_layout.setSpacing(10)
         shortcuts_layout.setContentsMargins(8, 8, 8, 8)
         self._populate_shortcuts(shortcuts_layout)
-        layout.addWidget(self.shortcuts_container, stretch=0)
+        # The panel scrolls instead of forcing the window taller than the screen
+        self.shortcuts_scroll = QScrollArea()
+        self.shortcuts_scroll.setObjectName("shortcutsScroll")
+        self.shortcuts_scroll.setStyleSheet("QScrollArea#shortcutsScroll { background: transparent; border: none; }")
+        self.shortcuts_scroll.setWidgetResizable(True)
+        self.shortcuts_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.shortcuts_scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.shortcuts_scroll.setMinimumHeight(80)
+        self.shortcuts_scroll.setMaximumHeight(self.shortcuts_container.sizeHint().height())
+        self.shortcuts_scroll.setWidget(self.shortcuts_container)
+        layout.addWidget(self.shortcuts_scroll, stretch=0)
 
         self._setup_settings_menu()
         self.setShortcutsVisible(self._initial_shortcuts_visibility())
@@ -430,6 +443,8 @@ class VideoPlayerApp(QMainWindow):
             col_widget = QWidget()
             col_widget.setProperty("isColumn", True)
             col_layout = QVBoxLayout(col_widget)
+            col_layout.setSpacing(4)
+            col_layout.setContentsMargins(8, 6, 8, 6)
             header = QLabel(header_text)
             header.setProperty("isHeader", True)
             col_layout.addWidget(header)
@@ -1178,13 +1193,34 @@ class VideoPlayerApp(QMainWindow):
         return screen is None or screen.availableGeometry().height() >= self.SMALL_SCREEN_HEIGHT
 
     def setShortcutsVisible(self, visible):
-        self.shortcuts_container.setVisible(visible)
+        self.shortcuts_scroll.setVisible(visible)
+        if visible:
+            QTimer.singleShot(0, self._keep_on_screen)
         self.toggle_shortcuts_action.setText("Hide Shortcuts (H)" if visible else "Show Shortcuts (H)")
+
+    def _keep_on_screen(self):
+        """Shrink/move the window back inside the available screen area if a layout change pushed it out."""
+        screen = self.screen()
+        if screen is None or self.isMaximized() or self.isFullScreen():
+            return
+        available = screen.availableGeometry()
+        frame = self.frameGeometry()
+        extra_w = frame.width() - self.width()
+        extra_h = frame.height() - self.height()
+        width = min(self.width(), available.width() - extra_w)
+        height = min(self.height(), available.height() - extra_h)
+        if (width, height) != (self.width(), self.height()):
+            self.resize(width, height)
+        frame = self.frameGeometry()
+        x = min(max(frame.x(), available.left()), available.right() - frame.width() + 1)
+        y = min(max(frame.y(), available.top()), available.bottom() - frame.height() + 1)
+        if (x, y) != (frame.x(), frame.y()):
+            self.move(x, y)
 
     def toggleShortcutsWidget(self):
         print("--- toggleShortcutsWidget called ---")
         if hasattr(self, "shortcuts_container"):
-            visible = not self.shortcuts_container.isVisibleTo(self)
+            visible = not self.shortcuts_scroll.isVisibleTo(self)
             self.setShortcutsVisible(visible)
             QSettings(ORGANIZATION_NAME, APP_NAME).setValue(self.SETTINGS_SHOW_SHORTCUTS, visible)
 
